@@ -1,0 +1,47 @@
+# === IDE ===
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# === Python ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# === 虚拟环境 ===
+venv/
+env/
+ENV/
+.venv/
+
+# === 环境变量与敏感配置 ===
+.env
+.env.local
+.env.*.local
+
+# === Jupyter ===
+.ipynb_checkpoints/
+
+# === 日志与临时文件 ===
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
