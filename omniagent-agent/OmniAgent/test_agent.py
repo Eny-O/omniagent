@@ -28,6 +28,7 @@ class TicketState(TypedDict):
     intent: str     #  识别的意图: 故障报修 / 查询 / 催办 / 知识问答
     entities: dict  # 提取的实体
     missing_fields: list  # 判断的缺失字段
+    supplement_text: str  # 用户补充的自然语言原文
     response: str  # 回复内容
 
 def extract_json(text: str) -> dict:
@@ -132,11 +133,21 @@ def is_missing_fields(state: TicketState) -> TicketState:
     return state
 
 def ask_user(state: TicketState) -> TicketState:
+    intent = state["intent"]
     missing_fields = state["missing_fields"]
-    print(f'询问用户补充缺失_fields: {missing_fields}')
-    # 生成追问文案
+    schema_cls = INTENT_SCHEMA_REGISTRY.get(intent)
+
+    # 把缺失字段的描述一并带出，供 LLM 和前端理解「要补什么」
+    field_descriptions = {}
+    if schema_cls is not None:
+        field_descriptions = {
+            name: schema_cls.model_fields[name].description
+            for name in missing_fields
+            if name in schema_cls.model_fields
+        }
+
     question = (
-        f"为了准确处理您的「{state['intent']}」请求，"
+        f"为了准确处理您的「{intent}」请求，"
         f"还需要您补充以下信息：{', '.join(missing_fields)}。"
     )
 
@@ -144,15 +155,50 @@ def ask_user(state: TicketState) -> TicketState:
     user_supplement = interrupt({
         "type": "missing_fields",
         "missing_fields": missing_fields,
+        "field_descriptions": field_descriptions,
         "question": question,
     })
 
-    # 恢复后，把用户补充的内容合并到 entities
-    for field_name, value in user_supplement.items():
+    # 用户补充的是自然语言，交给 parse_supplement 节点去理解合并
+    state["supplement_text"] = user_supplement.get("supplement_text", "")
+    return state
+
+
+def parse_supplement(state: TicketState) -> TicketState:
+    """把用户补充的自然语言解析到缺失字段上，合并进 entities。"""
+    intent = state["intent"]
+    schema_cls = INTENT_SCHEMA_REGISTRY.get(intent)
+    supplement_text = state.get("supplement_text", "")
+    missing_fields = state["missing_fields"]
+
+    if not supplement_text or schema_cls is None or not missing_fields:
+        return state
+
+    field_descriptions = {
+        name: schema_cls.model_fields[name].description
+        for name in missing_fields
+        if name in schema_cls.model_fields
+    }
+
+    prompt = f"""
+    你是数据提取专家。用户补充了以下信息，请从中提取缺失字段的值。
+
+    【用户补充】: {supplement_text}
+    【需要提取的字段及含义】: {json.dumps(field_descriptions, ensure_ascii=False)}
+
+    请返回一个 JSON 对象，key 必须是上述字段名。
+    补充内容里没有提到的字段不要凭空编造，直接忽略。只返回纯 JSON。
+    """
+    response = llm.invoke(prompt)
+    state["messages"].append(AIMessage(content=response.content))
+    parsed = extract_json(str(response.content))
+
+    # 合并进 entities，只接受本次缺失的字段
+    for field_name, value in parsed.items():
         if field_name in missing_fields:
             state["entities"][field_name] = value
-    # 清理，避免残留
-    state["missing_fields"] = []
+
+    state["supplement_text"] = ""
     return state
 
 
@@ -182,6 +228,7 @@ graph = StateGraph(TicketState)
 graph.add_node("recognize_intent", recognize_intent)
 graph.add_node("is_missing_fields", is_missing_fields)
 graph.add_node("ask_user", ask_user)
+graph.add_node("parse_supplement", parse_supplement)
 graph.add_node("fault_report", fault_report)
 graph.add_node("query_ticket", query_ticket)
 graph.add_node("knowledge_qa", knowledge_qa)
@@ -195,7 +242,8 @@ graph.add_edge("recognize_intent", "is_missing_fields")
 graph.add_conditional_edges("is_missing_fields",
                              lambda state: "ask_user" if state["missing_fields"] else "route_intent",
                              {"ask_user": "ask_user", "route_intent": "route_intent"})
-graph.add_edge("ask_user", "is_missing_fields")
+graph.add_edge("ask_user", "parse_supplement")
+graph.add_edge("parse_supplement", "is_missing_fields")
 # 路由意图
 graph.add_conditional_edges("route_intent",
                             route_intent,
