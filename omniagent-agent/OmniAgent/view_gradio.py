@@ -11,16 +11,6 @@ def add_message(history, role, content):
     return history
 
 
-def build_supplement_hint(payload):
-    """把中断 payload 转成面向用户的中文补充提示。"""
-    fields = payload.get("missing_fields", [])
-    descs = payload.get("field_descriptions", {})
-    if fields:
-        names = "、".join(descs.get(f, f) for f in fields)
-        return f"请补充以下信息：{names}"
-    return payload.get("question", "请补充信息")
-
-
 def chat(message, history, state):
     """
     Gradio 回调函数。
@@ -70,9 +60,8 @@ def chat(message, history, state):
             state["pending_descriptions"] = interrupt_payload.get("field_descriptions", {})
             state["pending_question"] = interrupt_payload.get("question", "")
 
-            hint = build_supplement_hint(interrupt_payload)
             history = add_message(history, "user", message)
-            history = add_message(history, "assistant", hint)
+            history = add_message(history, "assistant", interrupt_payload.get("question", "请补充信息"))
             return "", history, state
 
         history = add_message(history, "user", message)
@@ -85,9 +74,8 @@ def chat(message, history, state):
         state["pending_descriptions"] = payload.get("field_descriptions", {})
         state["pending_question"] = payload.get("question", "")
 
-        hint = build_supplement_hint(payload)
         history = add_message(history, "user", message)
-        history = add_message(history, "assistant", hint)
+        history = add_message(history, "assistant", payload.get("question", "请补充信息"))
         return "", history, state
     except Exception as e:
         history = add_message(history, "user", message)

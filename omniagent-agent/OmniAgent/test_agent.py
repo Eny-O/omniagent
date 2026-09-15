@@ -132,12 +132,38 @@ def is_missing_fields(state: TicketState) -> TicketState:
     state["missing_fields"] = fields_missing
     return state
 
+def _generate_question(intent: str, field_descriptions: dict) -> str:
+    """让 LLM 生成一句面向用户的中文追问，而非直接暴露字段名/描述。"""
+    prompt = f"""
+    你是智能工单助手的客服。用户正在办理「{intent}」，还缺少以下信息
+    （下面是每个字段的说明，仅供你理解，不要原样复述给用户）：
+
+    {json.dumps(field_descriptions, ensure_ascii=False)}
+
+    请用一句自然、礼貌、面向普通用户的中文，直接询问用户还需要提供什么。
+    要求：
+    - 不要出现英文字段名，不要出现「字段」「唯一ID」「优先使用此字段」等内部措辞
+    - 直接明了地提问，例如「请问您的工单号是多少？」
+    - 只输出这一句问话本身，不要任何解释或前缀
+    """
+    try:
+        resp = llm.invoke(prompt)
+        question = str(resp.content).strip()
+        if question:
+            return question
+    except Exception:
+        pass
+    # 兜底：拼一个简洁提示
+    names = "、".join(field_descriptions.values()) or "相关信息"
+    return f"还需要您补充：{names}。"
+
+
 def ask_user(state: TicketState) -> TicketState:
     intent = state["intent"]
     missing_fields = state["missing_fields"]
     schema_cls = INTENT_SCHEMA_REGISTRY.get(intent)
 
-    # 把缺失字段的描述一并带出，供 LLM 和前端理解「要补什么」
+    # description 仅供 AI 理解字段语义，不直接展示给用户
     field_descriptions = {}
     if schema_cls is not None:
         field_descriptions = {
@@ -146,10 +172,7 @@ def ask_user(state: TicketState) -> TicketState:
             if name in schema_cls.model_fields
         }
 
-    question = (
-        f"为了准确处理您的「{intent}」请求，"
-        f"还需要您补充以下信息：{', '.join(missing_fields)}。"
-    )
+    question = _generate_question(intent, field_descriptions)
 
     # 中断，等待前端把用户回答传回来
     user_supplement = interrupt({
