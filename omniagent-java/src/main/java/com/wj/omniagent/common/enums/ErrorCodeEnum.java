@@ -28,6 +28,13 @@ public enum ErrorCodeEnum {
     PLEASE_FLUSH_AFTER_RETRY("1007", "请刷新页面后重试"),
     PARAM_ERROR("1008", "传入参数错误"),
 
+    // 工单错误码
+    TICKET_GENER_FAILED_RETRY("2000", "工单号生成失败，请重试"),
+    TICKET_NOT_FOUND("2001", "工单不存在"),
+    TICKET_STATUS_NOT_FOUND("2002", "工单目标状态不存在"),
+    TICKET_STATUS_INVALID_TRANSITION("2003", "工单状态流转不合法"),
+    TICKET_STATUS_ERROR("2004", "工单状态异常"),
+
     // 文件与导入错误码
     FILE_FORMAT_ERROR("4001", "仅支持 .xlsx 格式文件"),
     FILE_EMPTY("4002", "上传文件为空"),

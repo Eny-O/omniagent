@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.wj.omniagent.common.enums.ErrorCodeEnum;
 import com.wj.omniagent.common.pojo.result.PageResult;
 
+import com.wj.omniagent.exception.BusinessException;
 import com.wj.omniagent.modules.ticket.mapper.TicketMapper;
 import com.wj.omniagent.modules.ticket.pojo.dos.Tickets;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketCreateDTO;
@@ -73,7 +74,7 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
                 log.warn("工单号重复，重新生成，ticketNo={}", ticket.getTicketNo());
                 retry++;
                 if (retry >= 3) {
-                    throw new RuntimeException("工单号生成失败，请重试");
+                    throw new BusinessException(ErrorCodeEnum.TICKET_GENER_FAILED_RETRY);
                 }
             }
         }
@@ -86,7 +87,7 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
         Assert.notNull(id, "工单ID不能为空");
         Tickets ticket = ticketMapper.selectById(id);
         if (ticket == null) {
-            throw new RuntimeException(ErrorCodeEnum.NOT_FOUND.getMessage());
+            throw new BusinessException(ErrorCodeEnum.TICKET_NOT_FOUND);
         }
         return convertToVO(ticket);
     }
@@ -137,13 +138,13 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
 
         Tickets ticket = ticketMapper.selectById(id);
         if (ticket == null) {
-            throw new RuntimeException(ErrorCodeEnum.NOT_FOUND.getMessage());
+            throw new BusinessException(ErrorCodeEnum.TICKET_NOT_FOUND);
         }
 
         TicketStatusEnum currentStatus = getStatusBySortOrder(ticket.getStatusId());
         TicketStatusEnum targetStatus = TicketStatusEnum.fromCode(ticketUpdateStatusDTO.getTargetStatusCode());
         if (targetStatus == null) {
-            throw new RuntimeException("目标状态不存在");
+            throw new BusinessException(ErrorCodeEnum.TICKET_STATUS_NOT_FOUND, "工单目标状态不存在");
         }
 
         // 幂等：相同状态直接返回
@@ -152,8 +153,8 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
         }
 
         if (!currentStatus.canTransitionTo(targetStatus)) {
-            throw new RuntimeException(
-                    String.format("状态流转不合法：%s -> %s", currentStatus.getName(), targetStatus.getName())
+            throw new BusinessException(ErrorCodeEnum.TICKET_STATUS_INVALID_TRANSITION,
+                    String.format("工单状态状态流转不合法：%s -> %s", currentStatus.getName(), targetStatus.getName())
             );
         }
 
@@ -180,7 +181,7 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
         Assert.notNull(id, "工单ID不能为空");
         Tickets ticket = ticketMapper.selectById(id);
         if (ticket == null) {
-            throw new RuntimeException(ErrorCodeEnum.NOT_FOUND.getMessage());
+            throw new BusinessException(ErrorCodeEnum.TICKET_NOT_FOUND);
         }
         ticketMapper.deleteById(id);
     }
@@ -198,7 +199,7 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
         return Arrays.stream(TicketStatusEnum.values())
                 .filter(s -> s.getSortOrder().equals(statusId))
                 .findFirst()
-                .orElseThrow(() -> new RuntimeException("工单状态异常"));
+                .orElseThrow(() -> new BusinessException(ErrorCodeEnum.TICKET_STATUS_ERROR, "工单状态异常"));
     }
 
     private TicketPageVO convertToPageVO(Tickets ticket) {
