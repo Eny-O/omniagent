@@ -3,69 +3,77 @@ import { RouterView } from 'vue-router'
 </script>
 
 <template>
-  <RouterView />
+  <div class="app-wrapper">
+    <header class="app-header">
+      <div class="header-left">
+        <span class="app-title">OmniAgent 工单助手</span>
+      </div>
+      <nav class="header-nav">
+        <RouterLink to="/tickets" class="nav-link" active-class="nav-link-active">
+          工单管理
+        </RouterLink>
+      </nav>
+    </header>
+    <main class="app-main">
+      <RouterView />
+    </main>
+  </div>
 </template>
 
 <style scoped>
-header {
-  line-height: 1.5;
-  max-height: 100vh;
+.app-wrapper {
+  min-height: 100vh;
+  background-color: #f5f7fa;
 }
 
-.logo {
-  display: block;
-  margin: 0 auto 2rem;
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 56px;
+  padding: 0 24px;
+  background-color: #ffffff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
 }
 
-nav {
-  width: 100%;
-  font-size: 12px;
-  text-align: center;
-  margin-top: 2rem;
+.header-left {
+  display: flex;
+  align-items: center;
 }
 
-nav a.router-link-exact-active {
-  color: var(--color-text);
+.app-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #303133;
 }
 
-nav a.router-link-exact-active:hover {
-  background-color: transparent;
+.header-nav {
+  display: flex;
+  align-items: center;
+  gap: 16px;
 }
 
-nav a {
-  display: inline-block;
-  padding: 0 1rem;
-  border-left: 1px solid var(--color-border);
+.nav-link {
+  color: #606266;
+  text-decoration: none;
+  font-size: 14px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: color 0.2s, background-color 0.2s;
 }
 
-nav a:first-of-type {
-  border: 0;
+.nav-link:hover {
+  color: #409eff;
+  background-color: #ecf5ff;
 }
 
-@media (min-width: 1024px) {
-  header {
-    display: flex;
-    place-items: center;
-    padding-right: calc(var(--section-gap) / 2);
-  }
+.nav-link-active {
+  color: #409eff;
+  background-color: #ecf5ff;
+  font-weight: 500;
+}
 
-  .logo {
-    margin: 0 2rem 0 0;
-  }
-
-  header .wrapper {
-    display: flex;
-    place-items: flex-start;
-    flex-wrap: wrap;
-  }
-
-  nav {
-    text-align: left;
-    margin-left: -1rem;
-    font-size: 1rem;
-
-    padding: 1rem 0;
-    margin-top: 1rem;
-  }
+.app-main {
+  padding: 20px;
 }
 </style>

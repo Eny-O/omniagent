@@ -33,10 +33,10 @@ request.interceptors.response.use(
 
     if (res.code !== '200' && res.code !== 200) {
       ElMessage.error(res.message || '请求失败')
-      return Promise.reject(new Error(res.message || '请求失败'))
     }
 
-    return response
+    // 返回响应体数据，业务层自行判断 code
+    return res as unknown as AxiosResponse<ApiResponse>
   },
   (error: unknown) => {
     let msg = '请求失败'
