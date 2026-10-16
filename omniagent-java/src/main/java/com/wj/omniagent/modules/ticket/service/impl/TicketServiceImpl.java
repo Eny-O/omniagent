@@ -16,6 +16,7 @@ import com.wj.omniagent.modules.ticket.pojo.enums.TicketStatusEnum;
 import com.wj.omniagent.modules.ticket.pojo.vo.TicketPageVO;
 import com.wj.omniagent.modules.ticket.pojo.vo.TicketVO;
 import com.wj.omniagent.modules.ticket.service.TicketService;
+import com.wj.omniagent.modules.ticket.util.TicketNoGenerator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
@@ -26,9 +27,7 @@ import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -38,7 +37,7 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
 
     private final TicketMapper ticketMapper;
 
-    private final AtomicInteger sequence = new AtomicInteger(0);
+    private final TicketNoGenerator ticketNoGenerator;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -66,7 +65,7 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
         // 生成工单号，数据库唯一索引 + 重试保证唯一性
         int retry = 0;
         while (retry < 3) {
-            ticket.setTicketNo(generateTicketNo());
+            ticket.setTicketNo(ticketNoGenerator.generate());
             try {
                 ticketMapper.insert(ticket);
                 break;
@@ -184,12 +183,6 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
             throw new BusinessException(ErrorCodeEnum.TICKET_NOT_FOUND);
         }
         ticketMapper.deleteById(id);
-    }
-
-    private String generateTicketNo() {
-        String date = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
-        int seq = sequence.incrementAndGet() % 1000;
-        return String.format("TKT-%s-%03d", date, seq);
     }
 
     private TicketStatusEnum getStatusBySortOrder(Integer statusId) {
