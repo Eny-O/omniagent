@@ -1,0 +1,75 @@
+package com.wj.omniagent.modules.ticket.controller;
+
+import com.wj.omniagent.common.pojo.result.PageResult;
+import com.wj.omniagent.common.pojo.result.ResponseResult;
+import com.wj.omniagent.modules.ticket.pojo.dto.TicketCreateDTO;
+import com.wj.omniagent.modules.ticket.pojo.dto.TicketQuery;
+import com.wj.omniagent.modules.ticket.pojo.dto.TicketUpdateStatusDTO;
+import com.wj.omniagent.modules.ticket.pojo.vo.TicketPageVO;
+import com.wj.omniagent.modules.ticket.pojo.vo.TicketVO;
+import com.wj.omniagent.modules.ticket.service.TicketService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.*;
+
+/**
+ * 工单管理 Controller
+ */
+@Tag(name = "工单管理", description = "工单核心 CRUD 接口")
+@RestController
+@RequestMapping("/api/tickets")
+@RequiredArgsConstructor
+@Validated
+public class TicketController {
+
+    private final TicketService ticketService;
+
+    @Operation(summary = "创建工单")
+    @PostMapping
+    public ResponseResult<TicketVO> create(@RequestBody @Valid TicketCreateDTO dto) {
+        TicketVO vo = ticketService.createTicket(dto, getCurrentUserId());
+        return ResponseResult.success(vo);
+    }
+
+    @Operation(summary = "查询工单详情")
+    @GetMapping("/{id}")
+    public ResponseResult<TicketVO> getById(
+            @Parameter(description = "工单ID") @PathVariable Long id) {
+        return ResponseResult.success(ticketService.getTicketById(id));
+    }
+
+    @Operation(summary = "分页查询工单列表")
+    @GetMapping("/page")
+    public ResponseResult<PageResult<TicketPageVO>> page(TicketQuery query) {
+        return ResponseResult.success(ticketService.pageTickets(query));
+    }
+
+    @Operation(summary = "更新工单状态")
+    @PutMapping("/{id}/status")
+    public ResponseResult<Void> updateStatus(
+            @Parameter(description = "工单ID") @PathVariable Long id,
+            @RequestBody @Valid TicketUpdateStatusDTO targetStatusCode) {
+        ticketService.updateTicketStatus(id, targetStatusCode, getCurrentUserId());
+        return ResponseResult.success();
+    }
+
+    @Operation(summary = "删除工单")
+    @DeleteMapping("/{id}")
+    public ResponseResult<Void> delete(
+            @Parameter(description = "工单ID") @PathVariable Long id) {
+        ticketService.deleteTicket(id);
+        return ResponseResult.success();
+    }
+
+    /**
+     * 获取当前用户ID
+     * TODO: 后续接入 Spring Security 后从 SecurityContext 获取
+     */
+    private Long getCurrentUserId() {
+        return 1L;
+    }
+}
