@@ -9,6 +9,8 @@ import com.wj.omniagent.modules.user.pojo.dto.DepartmentUpdateDTO;
 import com.wj.omniagent.modules.user.pojo.vo.DepartmentPageVO;
 import com.wj.omniagent.modules.user.pojo.vo.DepartmentVO;
 
+import java.util.List;
+
 /**
  * 部门 Service
  */
@@ -28,6 +30,11 @@ public interface DepartmentService extends IService<Departments> {
      * 分页查询部门
      */
     PageResult<DepartmentPageVO> pageDepartments(DepartmentQuery query);
+
+    /**
+     * 查询所有部门（用于树形展示）
+     */
+    List<DepartmentVO> listAllDepartments();
 
     /**
      * 更新部门信息

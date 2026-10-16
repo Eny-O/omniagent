@@ -16,6 +16,10 @@ const menuItems = [
     path: '/users',
     title: '用户管理',
   },
+  {
+    path: '/departments',
+    title: '部门管理',
+  },
 ]
 
 const handleMenuSelect = (path: string) => {
@@ -103,6 +107,70 @@ const handleMenuSelect = (path: string) => {
                 stroke-width="2"
                 stroke-linecap="round"
                 stroke-linejoin="round"
+              />
+            </svg>
+            <!-- 部门管理图标 -->
+            <svg
+              v-else-if="item.path === '/departments'"
+              class="menu-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M12 2V6"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <path
+                d="M12 18V22"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <path
+                d="M2 12H6"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <path
+                d="M18 12H22"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <rect
+                x="8"
+                y="6"
+                width="8"
+                height="4"
+                rx="1"
+                stroke="currentColor"
+                stroke-width="2"
+              />
+              <rect
+                x="2"
+                y="14"
+                width="6"
+                height="4"
+                rx="1"
+                stroke="currentColor"
+                stroke-width="2"
+              />
+              <rect
+                x="16"
+                y="14"
+                width="6"
+                height="4"
+                rx="1"
+                stroke="currentColor"
+                stroke-width="2"
               />
             </svg>
             <span class="menu-title">{{ item.title }}</span>

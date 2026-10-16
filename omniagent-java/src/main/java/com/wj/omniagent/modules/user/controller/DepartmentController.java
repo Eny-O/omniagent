@@ -16,6 +16,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 /**
  * 部门管理 Controller
  */
@@ -46,6 +48,12 @@ public class DepartmentController {
     @GetMapping("/page")
     public ResponseResult<PageResult<DepartmentPageVO>> page(DepartmentQuery query) {
         return ResponseResult.success(departmentService.pageDepartments(query));
+    }
+
+    @Operation(summary = "查询所有部门（树形结构用）")
+    @GetMapping("/tree")
+    public ResponseResult<List<DepartmentVO>> listAll() {
+        return ResponseResult.success(departmentService.listAllDepartments());
     }
 
     @Operation(summary = "更新部门信息")

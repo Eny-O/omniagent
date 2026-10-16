@@ -24,6 +24,7 @@ import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -75,6 +76,16 @@ public class DepartmentServiceImpl extends ServiceImpl<DepartmentMapper, Departm
             throw new BusinessException(ErrorCodeEnum.DEPT_NOT_FOUND);
         }
         return convertToVO(department);
+    }
+
+    @Override
+    public List<DepartmentVO> listAllDepartments() {
+        LambdaQueryWrapper<Departments> wrapper = new LambdaQueryWrapper<>();
+        wrapper.orderByAsc(Departments::getSortOrder)
+                .orderByDesc(Departments::getCreatedAt);
+        return departmentMapper.selectList(wrapper).stream()
+                .map(this::convertToVO)
+                .collect(Collectors.toList());
     }
 
     @Override
