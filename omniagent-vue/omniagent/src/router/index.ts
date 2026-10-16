@@ -1,8 +1,15 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { useUserStore } from '@/stores/user'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
+    {
+      path: '/login',
+      name: 'Login',
+      component: () => import('@/views/login/LoginView.vue'),
+      meta: { public: true },
+    },
     {
       path: '/',
       name: 'Layout',
@@ -27,6 +34,35 @@ const router = createRouter({
       ],
     },
   ],
+})
+
+// 路由守卫：未登录用户只能访问登录页；已登录用户访问登录页自动跳转到工单列表
+router.beforeEach(async (to, from, next) => {
+  const userStore = useUserStore()
+
+  // 如果 Pinia 中已有用户信息，直接判断
+  if (userStore.isLoggedIn) {
+    if (to.path === '/login') {
+      next('/tickets')
+    } else {
+      next()
+    }
+    return
+  }
+
+  // 未登录时访问登录页，直接放行
+  if (to.path === '/login') {
+    next()
+    return
+  }
+
+  // 访问其他页面时，先请求后端确认 Session 是否有效
+  const isLogin = await userStore.fetchCurrentUser()
+  if (isLogin) {
+    next()
+  } else {
+    next('/login')
+  }
 })
 
 export default router

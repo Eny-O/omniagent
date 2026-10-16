@@ -3,6 +3,7 @@ import axios, {
   type InternalAxiosRequestConfig,
 } from 'axios'
 import { ElMessage } from 'element-plus'
+import router from '@/router'
 
 interface ApiResponse<T = unknown> {
   code: string
@@ -34,14 +35,13 @@ interface ApiRequest {
 const request = axios.create({
   baseURL: '/api',
   timeout: 10000,
+  // Session/Cookie 方案：跨域请求自动携带 Cookie
+  withCredentials: true,
 }) as unknown as ApiRequest
 
 request.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
-    const token = localStorage.getItem('token')
-    if (token) {
-      config.headers['token'] = token
-    }
+    // Session/Cookie 方案由浏览器自动携带 Cookie，无需手动设置 token
     return config
   },
   (error: unknown) => Promise.reject(error),
@@ -76,9 +76,9 @@ request.interceptors.response.use(
       }
 
       if ('status' in error.response && error.response.status === 401) {
-        localStorage.removeItem('token')
-        if (window.location.hash !== '#/login') {
-          window.location.hash = '#/login'
+        // 未登录或 Session 过期，跳转到登录页
+        if (router.currentRoute.value.path !== '/login') {
+          router.push('/login')
         }
       }
     }
