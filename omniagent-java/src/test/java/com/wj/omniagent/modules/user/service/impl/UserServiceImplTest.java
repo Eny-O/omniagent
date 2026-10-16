@@ -17,8 +17,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.util.Collections;
 
@@ -35,6 +37,9 @@ class UserServiceImplTest {
     @Mock
     private UserMapper userMapper;
 
+    @Mock
+    private PasswordEncoder passwordEncoder;
+
     @InjectMocks
     private UserServiceImpl userService;
 
@@ -42,6 +47,8 @@ class UserServiceImplTest {
 
     @BeforeEach
     void setUp() {
+        Mockito.lenient().when(passwordEncoder.encode(any())).thenReturn("$2a$10$encoded");
+
         createDTO = new UserCreateDTO();
         createDTO.setUsername("zhangsan");
         createDTO.setPassword("123456");

@@ -18,6 +18,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.Assert;
@@ -32,6 +33,8 @@ import java.util.stream.Collectors;
 public class UserServiceImpl extends ServiceImpl<UserMapper, Users> implements UserService {
 
     private final UserMapper userMapper;
+
+    private final PasswordEncoder passwordEncoder;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -48,8 +51,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, Users> implements U
 
         Users user = new Users();
         user.setUsername(dto.getUsername().trim());
-        // TODO: 接入 Spring Security 后替换为 BCryptPasswordEncoder
-        user.setPasswordHash(encryptPassword(dto.getPassword()));
+        user.setPasswordHash(passwordEncoder.encode(dto.getPassword()));
         user.setRealName(StringUtils.hasText(dto.getRealName()) ? dto.getRealName().trim() : null);
         user.setEmail(StringUtils.hasText(dto.getEmail()) ? dto.getEmail().trim() : null);
         user.setPhone(StringUtils.hasText(dto.getPhone()) ? dto.getPhone().trim() : null);
@@ -187,9 +189,8 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, Users> implements U
         return status;
     }
 
-    private String encryptPassword(String rawPassword) {
-        // 临时使用 Hutool BCrypt，后续建议接入 Spring Security BCryptPasswordEncoder
-        return cn.hutool.crypto.digest.BCrypt.hashpw(rawPassword, cn.hutool.crypto.digest.BCrypt.gensalt());
+    private String encodePassword(String rawPassword) {
+        return passwordEncoder.encode(rawPassword);
     }
 
     private UserVO convertToVO(Users user) {

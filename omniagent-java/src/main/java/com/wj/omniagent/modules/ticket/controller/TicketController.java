@@ -2,6 +2,7 @@ package com.wj.omniagent.modules.ticket.controller;
 
 import com.wj.omniagent.common.pojo.result.PageResult;
 import com.wj.omniagent.common.pojo.result.ResponseResult;
+import com.wj.omniagent.common.utils.SecurityUtils;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketCreateDTO;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketQuery;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketUpdateDTO;
@@ -77,9 +78,8 @@ public class TicketController {
 
     /**
      * 获取当前用户ID
-     * TODO: 后续接入 Spring Security 后从 SecurityContext 获取
      */
     private Long getCurrentUserId() {
-        return 1L;
+        return SecurityUtils.getCurrentUserId();
     }
 }

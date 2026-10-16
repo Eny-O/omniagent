@@ -5,6 +5,7 @@ import com.wj.omniagent.common.pojo.result.PageResult;
 import com.wj.omniagent.modules.ticket.mapper.TicketMapper;
 import com.wj.omniagent.modules.ticket.pojo.dos.Tickets;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketCreateDTO;
+import com.wj.omniagent.modules.ticket.util.TicketNoGenerator;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketQuery;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketUpdateDTO;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketUpdateStatusDTO;
@@ -18,6 +19,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.Mockito;
 import org.springframework.dao.DuplicateKeyException;
 
 import java.time.LocalDateTime;
@@ -37,13 +39,24 @@ class TicketServiceImplTest {
     @Mock
     private TicketMapper ticketMapper;
 
+    @Mock
+    private TicketNoGenerator ticketNoGenerator;
+
     @InjectMocks
     private TicketServiceImpl ticketService;
 
     private TicketCreateDTO createDTO;
 
+    private int ticketNoSequence;
+
     @BeforeEach
     void setUp() {
+        ticketNoSequence = 0;
+        Mockito.lenient().when(ticketNoGenerator.generate()).thenAnswer(invocation -> {
+            ticketNoSequence++;
+            return "TKT-20261015-" + String.format("%03d", ticketNoSequence);
+        });
+
         createDTO = new TicketCreateDTO();
         createDTO.setTitle("电脑蓝屏无法启动");
         createDTO.setDescription("开机后蓝屏，错误代码0x00001");
@@ -160,7 +173,7 @@ class TicketServiceImplTest {
                 RuntimeException.class,
                 () -> ticketService.getTicketById(999L)
         );
-        assertEquals("资源不存在", exception.getMessage());
+        assertEquals("工单不存在", exception.getMessage());
     }
 
     // ==================== 分页查询 ====================
@@ -299,7 +312,7 @@ class TicketServiceImplTest {
                 RuntimeException.class,
                 () -> ticketService.deleteTicket(999L)
         );
-        assertEquals("资源不存在", exception.getMessage());
+        assertEquals("工单不存在", exception.getMessage());
         verify(ticketMapper, never()).deleteById(any(Long.class));
     }
 
