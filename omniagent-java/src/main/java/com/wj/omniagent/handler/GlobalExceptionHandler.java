@@ -11,6 +11,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.stream.Collectors;
 
@@ -73,6 +74,15 @@ public class GlobalExceptionHandler {
     public ResponseResult<Void> handleIllegalArgumentException(IllegalArgumentException e) {
         log.warn("非法参数：{}", e.getMessage());
         return ResponseResult.error(ErrorCodeEnum.BAD_REQUEST.getCode(), e.getMessage());
+    }
+
+    /**
+     * 静态资源不存在
+     */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseResult<Void> handleNoResourceFoundException(NoResourceFoundException e) {
+        log.debug("静态资源不存在：{}", e.getResourcePath());
+        return ResponseResult.error(ErrorCodeEnum.NOT_FOUND.getCode(), "资源不存在");
     }
 
     /**
