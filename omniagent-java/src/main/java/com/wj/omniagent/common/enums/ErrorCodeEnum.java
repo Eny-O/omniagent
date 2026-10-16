@@ -36,6 +36,13 @@ public enum ErrorCodeEnum {
     TICKET_STATUS_ERROR("2004", "工单状态异常"),
     TICKET_CLOSED_NOT_UPDATE("2005", "工单已关闭，不允许修改"),
 
+    // 部门错误码
+    DEPT_NOT_FOUND("3001", "部门不存在"),
+    DEPT_ALREADY_EXISTS("3002", "部门编码已存在"),
+    DEPT_PARENT_NOT_FOUND("3003", "上级部门不存在"),
+    DEPT_PARENT_SELF("3004", "上级部门不能是自己"),
+    DEPT_HAS_CHILDREN("3005", "该部门下存在子部门，不允许删除"),
+
     // 文件与导入错误码
     FILE_FORMAT_ERROR("4001", "仅支持 .xlsx 格式文件"),
     FILE_EMPTY("4002", "上传文件为空"),
