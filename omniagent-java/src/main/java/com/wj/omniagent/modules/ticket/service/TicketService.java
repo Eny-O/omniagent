@@ -6,6 +6,7 @@ import com.wj.omniagent.common.pojo.result.PageResult;
 import com.wj.omniagent.modules.ticket.pojo.dos.Tickets;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketCreateDTO;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketQuery;
+import com.wj.omniagent.modules.ticket.pojo.dto.TicketUpdateDTO;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketUpdateStatusDTO;
 import com.wj.omniagent.modules.ticket.pojo.vo.TicketPageVO;
 import com.wj.omniagent.modules.ticket.pojo.vo.TicketVO;
@@ -29,6 +30,11 @@ public interface TicketService extends IService<Tickets> {
      * 分页查询工单
      */
     PageResult<TicketPageVO> pageTickets(TicketQuery query);
+
+    /**
+     * 更新工单基本信息
+     */
+    TicketVO updateTicket(Long id, TicketUpdateDTO dto, Long operatorId);
 
     /**
      * 更新工单状态

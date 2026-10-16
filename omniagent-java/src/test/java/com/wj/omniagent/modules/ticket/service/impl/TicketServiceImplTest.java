@@ -6,6 +6,7 @@ import com.wj.omniagent.modules.ticket.mapper.TicketMapper;
 import com.wj.omniagent.modules.ticket.pojo.dos.Tickets;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketCreateDTO;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketQuery;
+import com.wj.omniagent.modules.ticket.pojo.dto.TicketUpdateDTO;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketUpdateStatusDTO;
 import com.wj.omniagent.modules.ticket.pojo.enums.TicketStatusEnum;
 import com.wj.omniagent.modules.ticket.pojo.vo.TicketPageVO;
@@ -301,6 +302,130 @@ class TicketServiceImplTest {
         assertEquals("资源不存在", exception.getMessage());
         verify(ticketMapper, never()).deleteById(any(Long.class));
     }
+
+    // ==================== 更新工单 ====================
+
+    @Test
+    @DisplayName("更新工单成功")
+    void updateTicket_Success() {
+        // given
+        Tickets ticket = buildTicket(1L, "TKT-20261015-001", TicketStatusEnum.DRAFT);
+        ticket.setContactPhone("13800000001");
+        ticket.setContactEmail("old@example.com");
+        ticket.setLocation("A栋1楼");
+        when(ticketMapper.selectById(1L)).thenReturn(ticket);
+        when(ticketMapper.updateById(any(Tickets.class))).thenReturn(1);
+
+        TicketUpdateDTO dto = new TicketUpdateDTO();
+        dto.setTitle("电脑黑屏无法启动");
+        dto.setDescription("开机后黑屏，无错误代码");
+        dto.setPriorityId(2);
+        dto.setCurrentAssigneeId(3L);
+        dto.setContactPhone("13900000002");
+        dto.setContactEmail("new@example.com");
+        dto.setLocation("B栋2楼202");
+
+        // when
+        TicketVO result = ticketService.updateTicket(1L, dto, 1L);
+
+        // then
+        assertNotNull(result);
+        assertEquals("电脑黑屏无法启动", result.getTitle());
+        assertEquals("开机后黑屏，无错误代码", result.getDescription());
+        assertEquals(2, result.getPriorityId());
+        assertEquals(3L, result.getCurrentAssigneeId());
+        assertEquals("13900000002", result.getContactPhone());
+        assertEquals("new@example.com", result.getContactEmail());
+        assertEquals("B栋2楼202", result.getLocation());
+        verify(ticketMapper, times(1)).updateById(any(Tickets.class));
+    }
+
+    @Test
+    @DisplayName("更新工单-部分字段更新时不覆盖其他字段")
+    void updateTicket_PartialUpdate_NotOverwriteOthers() {
+        // given
+        Tickets ticket = buildTicket(1L, "TKT-20261015-001", TicketStatusEnum.DRAFT);
+        ticket.setDescription("原始描述");
+        ticket.setPriorityId(1);
+        when(ticketMapper.selectById(1L)).thenReturn(ticket);
+        when(ticketMapper.updateById(any(Tickets.class))).thenReturn(1);
+
+        TicketUpdateDTO dto = new TicketUpdateDTO();
+        dto.setTitle("仅改标题");
+
+        // when
+        TicketVO result = ticketService.updateTicket(1L, dto, 1L);
+
+        // then
+        assertEquals("仅改标题", result.getTitle());
+        assertEquals("原始描述", result.getDescription());
+        assertEquals(1, result.getPriorityId());
+        verify(ticketMapper, times(1)).updateById(any(Tickets.class));
+    }
+
+    @Test
+    @DisplayName("更新工单-传空字符串可清空可选字段")
+    void updateTicket_ClearOptionalFields() {
+        // given
+        Tickets ticket = buildTicket(1L, "TKT-20261015-001", TicketStatusEnum.DRAFT);
+        ticket.setContactPhone("13800000001");
+        ticket.setContactEmail("old@example.com");
+        ticket.setLocation("A栋1楼");
+        when(ticketMapper.selectById(1L)).thenReturn(ticket);
+        when(ticketMapper.updateById(any(Tickets.class))).thenReturn(1);
+
+        TicketUpdateDTO dto = new TicketUpdateDTO();
+        dto.setContactPhone("");
+        dto.setContactEmail("");
+        dto.setLocation("");
+
+        // when
+        ticketService.updateTicket(1L, dto, 1L);
+
+        // then
+        assertNull(ticket.getContactPhone());
+        assertNull(ticket.getContactEmail());
+        assertNull(ticket.getLocation());
+        verify(ticketMapper, times(1)).updateById(ticket);
+    }
+
+    @Test
+    @DisplayName("更新工单-工单不存在时抛出异常")
+    void updateTicket_NotFound_ThrowsException() {
+        // given
+        when(ticketMapper.selectById(999L)).thenReturn(null);
+
+        TicketUpdateDTO dto = new TicketUpdateDTO();
+        dto.setTitle("新标题");
+
+        // when & then
+        RuntimeException exception = assertThrows(
+                RuntimeException.class,
+                () -> ticketService.updateTicket(999L, dto, 1L)
+        );
+        assertEquals("工单不存在", exception.getMessage());
+        verify(ticketMapper, never()).updateById(any(Tickets.class));
+    }
+
+    @Test
+    @DisplayName("更新工单-已关闭工单不允许修改")
+    void updateTicket_ClosedStatus_ThrowsException() {
+        // given
+        Tickets ticket = buildTicket(1L, "TKT-20261015-001", TicketStatusEnum.CLOSED);
+        when(ticketMapper.selectById(1L)).thenReturn(ticket);
+
+        TicketUpdateDTO dto = new TicketUpdateDTO();
+        dto.setTitle("想改标题");
+
+        // when & then
+        RuntimeException exception = assertThrows(
+                RuntimeException.class,
+                () -> ticketService.updateTicket(1L, dto, 1L)
+        );
+        assertEquals("工单已关闭，不允许修改", exception.getMessage());
+        verify(ticketMapper, never()).updateById(any(Tickets.class));
+    }
+
 
     // ==================== 私有工具方法 ====================
 

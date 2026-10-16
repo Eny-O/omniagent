@@ -34,6 +34,7 @@ public enum ErrorCodeEnum {
     TICKET_STATUS_NOT_FOUND("2002", "工单目标状态不存在"),
     TICKET_STATUS_INVALID_TRANSITION("2003", "工单状态流转不合法"),
     TICKET_STATUS_ERROR("2004", "工单状态异常"),
+    TICKET_CLOSED_NOT_UPDATE("2005", "工单已关闭，不允许修改"),
 
     // 文件与导入错误码
     FILE_FORMAT_ERROR("4001", "仅支持 .xlsx 格式文件"),

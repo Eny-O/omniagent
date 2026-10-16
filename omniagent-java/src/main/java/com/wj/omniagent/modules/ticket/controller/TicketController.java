@@ -4,6 +4,7 @@ import com.wj.omniagent.common.pojo.result.PageResult;
 import com.wj.omniagent.common.pojo.result.ResponseResult;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketCreateDTO;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketQuery;
+import com.wj.omniagent.modules.ticket.pojo.dto.TicketUpdateDTO;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketUpdateStatusDTO;
 import com.wj.omniagent.modules.ticket.pojo.vo.TicketPageVO;
 import com.wj.omniagent.modules.ticket.pojo.vo.TicketVO;
@@ -46,6 +47,15 @@ public class TicketController {
     @GetMapping("/page")
     public ResponseResult<PageResult<TicketPageVO>> page(TicketQuery query) {
         return ResponseResult.success(ticketService.pageTickets(query));
+    }
+
+    @Operation(summary = "更新工单基本信息")
+    @PutMapping("/{id}")
+    public ResponseResult<TicketVO> update(
+            @Parameter(description = "工单ID") @PathVariable Long id,
+            @RequestBody @Valid TicketUpdateDTO dto) {
+        TicketVO vo = ticketService.updateTicket(id, dto, getCurrentUserId());
+        return ResponseResult.success(vo);
     }
 
     @Operation(summary = "更新工单状态")

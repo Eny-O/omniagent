@@ -11,6 +11,7 @@ import com.wj.omniagent.modules.ticket.mapper.TicketMapper;
 import com.wj.omniagent.modules.ticket.pojo.dos.Tickets;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketCreateDTO;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketQuery;
+import com.wj.omniagent.modules.ticket.pojo.dto.TicketUpdateDTO;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketUpdateStatusDTO;
 import com.wj.omniagent.modules.ticket.pojo.enums.TicketStatusEnum;
 import com.wj.omniagent.modules.ticket.pojo.vo.TicketPageVO;
@@ -131,6 +132,32 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    public TicketVO updateTicket(Long id, TicketUpdateDTO dto, Long operatorId) {
+        Assert.notNull(id, "工单ID不能为空");
+        Assert.notNull(dto, "更新工单请求不能为空");
+
+        Tickets ticket = ticketMapper.selectById(id);
+        if (ticket == null) {
+            throw new BusinessException(ErrorCodeEnum.TICKET_NOT_FOUND);
+        }
+
+        // 已关闭工单不允许再编辑基本信息
+        TicketStatusEnum currentStatus = getStatusBySortOrder(ticket.getStatusId());
+        if (currentStatus.isTerminal()) {
+            throw new BusinessException(ErrorCodeEnum.TICKET_CLOSED_NOT_UPDATE);
+        }
+
+        // 仅更新非空字段，避免把已有值覆盖成 null
+        applyUpdateFields(ticket, dto);
+        ticket.setUpdatedAt(LocalDateTime.now());
+
+        ticketMapper.updateById(ticket);
+
+        return convertToVO(ticket);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
     public void updateTicketStatus(Long id, TicketUpdateStatusDTO ticketUpdateStatusDTO, Long operatorId) {
         Assert.notNull(id, "工单ID不能为空");
         Assert.notNull(ticketUpdateStatusDTO, "目标状态不能为空");
@@ -183,6 +210,43 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
             throw new BusinessException(ErrorCodeEnum.TICKET_NOT_FOUND);
         }
         ticketMapper.deleteById(id);
+    }
+
+    private void applyUpdateFields(Tickets ticket, TicketUpdateDTO dto) {
+        if (StringUtils.hasText(dto.getTitle())) {
+            ticket.setTitle(dto.getTitle().trim());
+        }
+        if (dto.getDescription() != null) {
+            ticket.setDescription(dto.getDescription().trim());
+        }
+        if (dto.getCategoryId() != null) {
+            ticket.setCategoryId(dto.getCategoryId());
+        }
+        if (dto.getPriorityId() != null) {
+            ticket.setPriorityId(dto.getPriorityId());
+        }
+        if (dto.getCurrentAssigneeId() != null) {
+            ticket.setCurrentAssigneeId(dto.getCurrentAssigneeId());
+        }
+        if (StringUtils.hasText(dto.getContactPhone())) {
+            ticket.setContactPhone(dto.getContactPhone().trim());
+        } else if (dto.getContactPhone() != null) {
+            // 显式传空字符串表示清空
+            ticket.setContactPhone(null);
+        }
+        if (StringUtils.hasText(dto.getContactEmail())) {
+            ticket.setContactEmail(dto.getContactEmail().trim());
+        } else if (dto.getContactEmail() != null) {
+            ticket.setContactEmail(null);
+        }
+        if (StringUtils.hasText(dto.getLocation())) {
+            ticket.setLocation(dto.getLocation().trim());
+        } else if (dto.getLocation() != null) {
+            ticket.setLocation(null);
+        }
+        if (dto.getExpectedResolveAt() != null) {
+            ticket.setExpectedResolveAt(dto.getExpectedResolveAt());
+        }
     }
 
     private TicketStatusEnum getStatusBySortOrder(Integer statusId) {
