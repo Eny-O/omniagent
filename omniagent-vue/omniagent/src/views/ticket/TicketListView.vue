@@ -8,7 +8,11 @@ import {
   createTicket,
   updateTicket,
 } from '@/api/ticket'
+import { useDictStore } from '@/stores/dict'
 import TicketFormDialog from './TicketFormDialog.vue'
+
+// 字典下拉选项与标签/标签色由 dict store 动态提供
+const dictStore = useDictStore()
 
 // 搜索表单
 const searchForm = reactive({
@@ -28,53 +32,6 @@ const pageSize = ref(10)
 // 弹窗
 const dialogVisible = ref(false)
 const currentTicket = ref<TicketForm | undefined>(undefined)
-
-// 状态、优先级、分类选项
-const statusOptions = [
-  { label: '草稿', value: 1 },
-  { label: '待处理', value: 2 },
-  { label: '处理中', value: 3 },
-  { label: '已解决', value: 4 },
-  { label: '已关闭', value: 5 },
-]
-
-const priorityOptions = [
-  { label: '高', value: 3 },
-  { label: '中', value: 2 },
-  { label: '低', value: 1 },
-]
-
-const categoryOptions = [
-  { label: '硬件故障', value: 1 },
-  { label: '软件问题', value: 2 },
-  { label: '网络问题', value: 3 },
-  { label: '其他', value: 4 },
-]
-
-const getStatusTagType = (statusId: number) => {
-  const map: Record<number, 'info' | 'warning' | 'primary' | 'success' | 'danger'> = {
-    1: 'info',
-    2: 'warning',
-    3: 'primary',
-    4: 'success',
-    5: 'info',
-  }
-  return map[statusId] || 'info'
-}
-
-const getStatusLabel = (statusId: number) => {
-  return statusOptions.find((item) => item.value === statusId)?.label || '未知'
-}
-
-const getPriorityLabel = (priorityId: number | null) => {
-  if (!priorityId) return '-'
-  return priorityOptions.find((item) => item.value === priorityId)?.label || '未知'
-}
-
-const getCategoryLabel = (categoryId: number | null) => {
-  if (!categoryId) return '-'
-  return categoryOptions.find((item) => item.value === categoryId)?.label || '未知'
-}
 
 // 加载数据
 const loadData = async () => {
@@ -195,7 +152,8 @@ const handleSubmit = async (formData: TicketForm) => {
   loadData()
 }
 
-onMounted(() => {
+onMounted(async () => {
+  await dictStore.loadDicts()
   loadData()
 })
 </script>
@@ -215,7 +173,7 @@ onMounted(() => {
         <el-form-item label="状态">
           <el-select v-model="searchForm.statusId" placeholder="全部" clearable style="width: 140px">
             <el-option
-              v-for="item in statusOptions"
+              v-for="item in dictStore.statusOptions"
               :key="item.value"
               :label="item.label"
               :value="item.value"
@@ -230,7 +188,7 @@ onMounted(() => {
             style="width: 140px"
           >
             <el-option
-              v-for="item in priorityOptions"
+              v-for="item in dictStore.priorityOptions"
               :key="item.value"
               :label="item.label"
               :value="item.value"
@@ -245,7 +203,7 @@ onMounted(() => {
             style="width: 140px"
           >
             <el-option
-              v-for="item in categoryOptions"
+              v-for="item in dictStore.categoryOptions"
               :key="item.value"
               :label="item.label"
               :value="item.value"
@@ -272,18 +230,18 @@ onMounted(() => {
         <el-table-column prop="title" label="标题" min-width="200" show-overflow-tooltip />
         <el-table-column label="分类" width="100">
           <template #default="{ row }">
-            {{ getCategoryLabel(row.categoryId) }}
+            {{ dictStore.getCategoryLabel(row.categoryId) }}
           </template>
         </el-table-column>
         <el-table-column label="优先级" width="80">
           <template #default="{ row }">
-            {{ getPriorityLabel(row.priorityId) }}
+            {{ dictStore.getPriorityLabel(row.priorityId) }}
           </template>
         </el-table-column>
         <el-table-column label="状态" width="90">
           <template #default="{ row }">
-            <el-tag :type="getStatusTagType(row.statusId)">
-              {{ getStatusLabel(row.statusId) }}
+            <el-tag :type="dictStore.getStatusTagType(row.statusId)">
+              {{ dictStore.getStatusLabel(row.statusId) }}
             </el-tag>
           </template>
         </el-table-column>

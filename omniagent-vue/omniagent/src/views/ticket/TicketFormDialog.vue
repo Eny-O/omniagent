@@ -2,6 +2,10 @@
 import { ref, watch } from 'vue'
 import type { TicketForm } from '@/types/ticket'
 import { getTicketById } from '@/api/ticket'
+import { useDictStore } from '@/stores/dict'
+
+// 字典下拉选项由 dict store 动态提供（来源 sourceOptions 仍硬编码，后端未纳入字典）
+const dictStore = useDictStore()
 
 const props = defineProps<{
   visible: boolean
@@ -57,19 +61,6 @@ const rules = {
   contactEmail: [{ validator: validateEmail, trigger: 'blur' }],
 }
 
-const categoryOptions = [
-  { label: '硬件故障', value: 1 },
-  { label: '软件问题', value: 2 },
-  { label: '网络问题', value: 3 },
-  { label: '其他', value: 4 },
-]
-
-const priorityOptions = [
-  { label: '高', value: 3 },
-  { label: '中', value: 2 },
-  { label: '低', value: 1 },
-]
-
 const sourceOptions = [
   { label: 'Web', value: 'WEB' },
   { label: 'App', value: 'APP' },
@@ -81,6 +72,8 @@ watch(
   () => props.visible,
   async (val) => {
     if (val) {
+      // 兜底加载字典（幂等：列表页已加载则直接复用）
+      await dictStore.loadDicts()
       if (props.ticket?.id) {
         // 编辑：调用详情接口补全数据
         const res = await getTicketById(props.ticket.id)
@@ -152,7 +145,7 @@ const handleSubmit = async () => {
           <el-form-item label="分类">
             <el-select v-model="formData.categoryId" placeholder="请选择" clearable style="width: 100%">
               <el-option
-                v-for="item in categoryOptions"
+                v-for="item in dictStore.categoryOptions"
                 :key="item.value"
                 :label="item.label"
                 :value="item.value"
@@ -164,7 +157,7 @@ const handleSubmit = async () => {
           <el-form-item label="优先级">
             <el-select v-model="formData.priorityId" placeholder="请选择" clearable style="width: 100%">
               <el-option
-                v-for="item in priorityOptions"
+                v-for="item in dictStore.priorityOptions"
                 :key="item.value"
                 :label="item.label"
                 :value="item.value"
