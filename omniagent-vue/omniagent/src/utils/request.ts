@@ -1,20 +1,40 @@
 import axios, {
-  type AxiosInstance,
   type AxiosResponse,
   type InternalAxiosRequestConfig,
 } from 'axios'
 import { ElMessage } from 'element-plus'
 
 interface ApiResponse<T = unknown> {
-  code: string | number
+  code: string
   message: string
   data: T
 }
 
-const request: AxiosInstance = axios.create({
+interface ApiRequest {
+  interceptors: {
+    request: {
+      use(
+        onFulfilled?: (config: InternalAxiosRequestConfig) => InternalAxiosRequestConfig | Promise<InternalAxiosRequestConfig>,
+        onRejected?: (error: unknown) => unknown,
+      ): number
+    }
+    response: {
+      use(
+        onFulfilled?: (response: AxiosResponse<ApiResponse>) => ApiResponse | Promise<ApiResponse>,
+        onRejected?: (error: unknown) => unknown,
+      ): number
+    }
+  }
+  get<T>(url: string, config?: Record<string, unknown>): Promise<ApiResponse<T>>
+  post<T>(url: string, data?: unknown, config?: Record<string, unknown>): Promise<ApiResponse<T>>
+  put<T>(url: string, data?: unknown, config?: Record<string, unknown>): Promise<ApiResponse<T>>
+  delete<T>(url: string, config?: Record<string, unknown>): Promise<ApiResponse<T>>
+}
+
+const request = axios.create({
   baseURL: '/api',
   timeout: 10000,
-})
+}) as unknown as ApiRequest
 
 request.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
@@ -29,14 +49,15 @@ request.interceptors.request.use(
 
 request.interceptors.response.use(
   (response: AxiosResponse<ApiResponse>) => {
-    const res = response.data
+    const res = response.data as ApiResponse
+    const code = String(res.code)
 
-    if (res.code !== '200' && res.code !== 200) {
+    if (code !== '200') {
       ElMessage.error(res.message || '请求失败')
     }
 
     // 返回响应体数据，业务层自行判断 code
-    return res as unknown as AxiosResponse<ApiResponse>
+    return res
   },
   (error: unknown) => {
     let msg = '请求失败'

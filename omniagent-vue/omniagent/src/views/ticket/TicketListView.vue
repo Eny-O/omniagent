@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import type { TicketPageVO, TicketForm } from '@/types/ticket'
+import type { TicketPageVO, TicketForm, TicketUpdateDTO } from '@/types/ticket'
 import {
   pageTickets,
   deleteTicket,
@@ -174,8 +174,9 @@ const handleDelete = (row: TicketPageVO) => {
 // 提交表单
 const handleSubmit = async (formData: TicketForm) => {
   if (formData.id) {
-    // 编辑
-    const res = await updateTicket(formData.id, formData)
+    // 编辑：转换为更新 DTO，排除 id 和 source
+    const { id, source, ...updateDto } = formData
+    const res = await updateTicket(id, updateDto as TicketUpdateDTO)
     if (res.code !== '200') {
       ElMessage.error(res.message || '修改失败')
       return

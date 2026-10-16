@@ -72,6 +72,23 @@ export interface TicketCreateDTO {
 }
 
 /**
+ * 更新工单请求 DTO
+ * <p>
+ * 所有字段均为可选，传空字符串表示清空对应字段。
+ */
+export interface TicketUpdateDTO {
+  title?: string
+  description?: string
+  categoryId?: number | null
+  priorityId?: number | null
+  currentAssigneeId?: number | null
+  contactPhone?: string
+  contactEmail?: string
+  location?: string
+  expectedResolveAt?: string | null
+}
+
+/**
  * 更新工单状态请求 DTO
  */
 export interface TicketUpdateStatusDTO {
