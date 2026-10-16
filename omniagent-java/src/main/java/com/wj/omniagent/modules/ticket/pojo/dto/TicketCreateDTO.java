@@ -1,5 +1,6 @@
 package com.wj.omniagent.modules.ticket.pojo.dto;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -43,7 +44,8 @@ public class TicketCreateDTO {
     @Schema(description = "位置", example = "A栋3楼301")
     private String location;
 
-    @Schema(description = "预计解决时间")
+    @Schema(description = "预计解决时间", example = "2026-10-20 10:00:00")
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "GMT+8")
     private LocalDateTime expectedResolveAt;
 }
 
