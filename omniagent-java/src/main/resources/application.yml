@@ -1,5 +1,17 @@
 server:
   port: 8080
+  servlet:
+    session:
+      cookie:
+        # 确保 Session Cookie 在根路径下生效，前端所有 /api 请求都能带上
+        name: JSESSIONID
+        path: /
+        # 开发环境使用 Lax（默认值），同站 localhost:5173 -> localhost:8080 经 vite proxy 后浏览器视为同站，可正常携带
+        # 注意：SameSite=None 必须同时设置 Secure=true（仅 HTTPS），否则浏览器会拒绝该 Cookie
+        same-site: lax
+        # 仅开发环境关闭 secure；生产环境必须改为 true 并启用 HTTPS
+        secure: false
+
 spring:
   application:
     name: omniagent

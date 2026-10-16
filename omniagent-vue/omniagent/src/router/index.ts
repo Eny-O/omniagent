@@ -37,32 +37,33 @@ const router = createRouter({
 })
 
 // 路由守卫：未登录用户只能访问登录页；已登录用户访问登录页自动跳转到工单列表
-router.beforeEach(async (to, from, next) => {
+// Vue Router 4 推荐直接 return 值，不再使用 next() 回调
+router.beforeEach(async (to) => {
   const userStore = useUserStore()
 
   // 如果 Pinia 中已有用户信息，直接判断
   if (userStore.isLoggedIn) {
     if (to.path === '/login') {
-      next('/tickets')
-    } else {
-      next()
+      return '/tickets'
     }
-    return
+    return true
   }
 
   // 未登录时访问登录页，直接放行
   if (to.path === '/login') {
-    next()
-    return
+    return true
   }
 
   // 访问其他页面时，先请求后端确认 Session 是否有效
-  const isLogin = await userStore.fetchCurrentUser()
-  if (isLogin) {
-    next()
-  } else {
-    next('/login')
+  try {
+    const isLogin = await userStore.fetchCurrentUser()
+    if (isLogin) {
+      return true
+    }
+  } catch {
+    // fetchCurrentUser 内部已经会跳转登录页，这里直接拒绝导航即可
   }
+  return '/login'
 })
 
 export default router

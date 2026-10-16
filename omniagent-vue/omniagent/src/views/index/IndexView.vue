@@ -1,11 +1,25 @@
 <script setup lang="ts">
 import { useRoute, useRouter } from 'vue-router'
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
+import { useUserStore } from '@/stores/user'
 
 const route = useRoute()
 const router = useRouter()
+const userStore = useUserStore()
 
 const activeMenu = computed(() => route.path)
+const currentUserName = computed(() => userStore.user?.realName || userStore.user?.username || '未登录')
+
+onMounted(() => {
+  // 页面刷新后如果 Pinia 中没有用户信息，尝试从后端 Session 恢复
+  if (!userStore.isLoggedIn) {
+    userStore.fetchCurrentUser()
+  }
+})
+
+const handleLogout = () => {
+  userStore.doLogout()
+}
 
 const menuItems = [
   {
@@ -181,7 +195,15 @@ const handleMenuSelect = (path: string) => {
         <el-header class="layout-header">
           <div class="header-title">工单管理系统</div>
           <div class="header-right">
-            <span class="header-user">管理员</span>
+            <span class="header-user">{{ currentUserName }}</span>
+            <el-button
+              type="danger"
+              link
+              class="logout-btn"
+              @click="handleLogout"
+            >
+              退出登录
+            </el-button>
           </div>
         </el-header>
         <el-main class="layout-main">
@@ -307,6 +329,11 @@ const handleMenuSelect = (path: string) => {
 .header-user {
   font-size: 14px;
   color: #606266;
+}
+
+.logout-btn {
+  margin-left: 16px;
+  font-size: 14px;
 }
 
 .layout-main {

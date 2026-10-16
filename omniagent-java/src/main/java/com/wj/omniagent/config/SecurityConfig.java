@@ -20,6 +20,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandler;
+import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
+import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -56,6 +58,14 @@ public class SecurityConfig {
     }
 
     /**
+     * SecurityContext 持久化仓库：使用 HttpSession，确保登录后 SecurityContext 随 Session 一起保存
+     */
+    @Bean
+    public SecurityContextRepository securityContextRepository() {
+        return new HttpSessionSecurityContextRepository();
+    }
+
+    /**
      * CORS 配置：允许前端开发服务器跨域访问，并携带 Cookie/Session
      */
     @Bean
@@ -82,6 +92,9 @@ public class SecurityConfig {
 
                 // 启用 CORS，使用上方定义的 CorsConfigurationSource
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+
+                // 使用 HttpSession 存储 SecurityContext，保证登录状态可恢复
+                .securityContext(context -> context.securityContextRepository(securityContextRepository()))
 
                 // 配置 URL 授权
                 .authorizeHttpRequests(auth -> auth

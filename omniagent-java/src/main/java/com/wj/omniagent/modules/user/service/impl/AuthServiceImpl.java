@@ -10,6 +10,7 @@ import com.wj.omniagent.modules.user.pojo.dto.LoginDTO;
 import com.wj.omniagent.modules.user.pojo.vo.LoginUserVO;
 import com.wj.omniagent.modules.user.service.AuthService;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,8 +21,10 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.logout.SecurityContextLogoutHandler;
+import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.util.Assert;
 
@@ -41,6 +44,10 @@ public class AuthServiceImpl implements AuthService {
 
     private final HttpServletRequest request;
 
+    private final HttpServletResponse response;
+
+    private final SecurityContextRepository securityContextRepository;
+
     @Override
     public LoginUserVO login(LoginDTO dto) {
         Assert.notNull(dto, "登录请求不能为空");
@@ -52,10 +59,16 @@ public class AuthServiceImpl implements AuthService {
 
         try {
             Authentication authentication = authenticationManager.authenticate(token);
-            SecurityContextHolder.getContext().setAuthentication(authentication);
 
-            // 触发 Session 创建，保证前端 axios withCredentials 后续请求能自动带 Cookie
+            // 显式创建 SecurityContext 并写入当前线程
+            SecurityContext context = SecurityContextHolder.createEmptyContext();
+            context.setAuthentication(authentication);
+            SecurityContextHolder.setContext(context);
+
+            // 触发 Session 创建，并显式把 SecurityContext 保存到 Session
+            // 保证后端能正确返回 Set-Cookie，前端 axios 后续请求可自动携带
             HttpSession session = request.getSession(true);
+            securityContextRepository.saveContext(context, request, response);
             log.info("用户登录成功，username={}，sessionId={}", dto.getUsername(), session.getId());
 
             return buildLoginUserVO(dto.getUsername().trim());
