@@ -1,8 +1,10 @@
 from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
 from app.api.agent import router as agent_router
+from app.services import dict_service
 from contextlib import asynccontextmanager
 from fastapi import Request
+from fastapi.responses import JSONResponse
 
 
 
@@ -10,7 +12,12 @@ from fastapi import Request
 # 应用启动时初始化一次的东西：LLM 客户端、读取配置、预热字典缓存：
 @asynccontextmanager
 async def lifespan(app):
-    # 启动时：初始化 LLM、加载 dict 缓存……
+    # 预热字典缓存：Agent 创建/查询工单时需要 标签<->id 互转
+    try:
+        await dict_service.load_dicts()
+    except Exception as e:
+        # Java 未启动时不阻塞启动，仅告警
+        print(f"[warn] 字典预热失败（Java 未启动？）：{e}")
     yield
     # 关闭时：释放资源
 
@@ -23,8 +30,8 @@ app.add_middleware(CORSMiddleware,
                    allow_credentials=True,
                    allow_methods=["*"],
                    allow_headers=["*"])
-# 挂载路由，前缀为 /agent
-app.include_router(agent_router,prefix="/agent")
+# 挂载路由，统一前缀 /api（最终接口：/api/agent/chat）
+app.include_router(agent_router,prefix="/api")
 
 
 @app.exception_handler(Exception)
