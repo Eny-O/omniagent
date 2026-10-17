@@ -1,15 +1,13 @@
-from typing import TypedDict, Annotated, Any
+from typing import TypedDict, Annotated
 
 from langchain_deepseek import ChatDeepSeek
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import StateGraph, END, START
 from langgraph.graph.message import add_messages
-from langgraph.graph.state import CompiledStateGraph
-from langgraph.types import interrupt, Command
-from langgraph.errors import GraphInterrupt
-from schemas.create_ticket import CreateTicketSchema
-from schemas.query_ticket import QueryTicketSchema
+from langgraph.types import interrupt
+from app.schemas.create_ticket import CreateTicketSchema
+from app.schemas.query_ticket import QueryTicketSchema
 from pydantic import BaseModel
 from typing import Type, Dict, Optional
 import json
