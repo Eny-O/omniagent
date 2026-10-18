@@ -67,10 +67,11 @@ async def create_ticket(
 ) -> str:
     """创建工单。当用户描述了一个故障/需求并希望新建工单时调用。
     分类/优先级可传中文标签（如'硬件故障'/'高'）或数字 id，由 dict_service 归一化。"""
-    # 归一化：中文标签或数字 id -> Java 需要的整数 id（复用预热缓存，无额外网络请求）
+    # 归一化：分类/优先级中文标签或数字 id -> Java 需要的整数 id；来源校验合法编码（复用预热缓存，无额外网络请求）
     category_id = await dict_service.resolve_category(category)
     priority_id = await dict_service.resolve_priority(priority)
-    payload: dict = {"title": title, "source": source or "AGENT"}
+    source_code = await dict_service.resolve_source(source) or "AGENT"
+    payload: dict = {"title": title, "source": source_code}
     if description is not None:
         payload["description"] = description
     if category_id is not None:

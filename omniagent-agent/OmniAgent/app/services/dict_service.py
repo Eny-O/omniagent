@@ -7,8 +7,9 @@ from __future__ import annotations
 
 from app.repositories import backend_client
 
-# 进程内缓存：categories / statuses / priorities 均为后端 VO 列表
-_cache: dict = {"categories": None, "statuses": None, "priorities": None}
+# 进程内缓存：categories / statuses / priorities / sources 均为后端 VO 列表
+# 注意：sources 的 value 是来源编码（如 WEB/AGENT）字符串，非数字 id
+_cache: dict = {"categories": None, "statuses": None, "priorities": None, "sources": None}
 
 
 async def load_dicts() -> None:
@@ -17,6 +18,7 @@ async def load_dicts() -> None:
     _cache["categories"] = data.get("categories") or []
     _cache["statuses"] = data.get("statuses") or []
     _cache["priorities"] = data.get("priorities") or []
+    _cache["sources"] = data.get("sources") or []
 
 
 async def _ensure_loaded() -> None:
@@ -84,6 +86,24 @@ async def resolve_status(arg) -> int | None:
     return await resolve_status_id(str(arg))
 
 
+async def resolve_source(code) -> str | None:
+    """来源：接受来源编码(如 'AGENT')或中文标签(如 '智能助手')，统一返回合法编码；
+    无法识别返回 None。来源字典 value 即编码（与 tickets.source 列一致），不是数字 id。"""
+    await _ensure_loaded()
+    if not code:
+        return None
+    code = str(code).strip()
+    items = _cache["sources"] or []
+    codes = {i.get("value") for i in items}
+    if code in codes:
+        return code
+    # 当作中文标签匹配
+    for item in items:
+        if item.get("label") == code:
+            return item.get("value")
+    return None
+
+
 def category_options() -> list:
     return _cache["categories"] or []
 
@@ -112,13 +132,16 @@ def to_prompt_text() -> str:
     cats = fmt(_cache["categories"])
     pris = fmt(_cache["priorities"])
     stats = fmt(_cache["statuses"])
-    if not (cats or pris or stats):
+    srcs = fmt(_cache["sources"])
+    if not (cats or pris or stats or srcs):
         return ""
-    lines = ["工单字典映射（用户用中文描述时，请使用对应的数字 id 传参）："]
+    lines = ["工单字典映射（用户用中文描述时，请使用对应的数字 id / 来源编码传参）："]
     if cats:
         lines.append(f"- 分类: {cats}")
     if pris:
         lines.append(f"- 优先级: {pris}")
     if stats:
         lines.append(f"- 状态: {stats}")
+    if srcs:
+        lines.append(f"- 来源(编码): {srcs}")
     return "\n".join(lines)
