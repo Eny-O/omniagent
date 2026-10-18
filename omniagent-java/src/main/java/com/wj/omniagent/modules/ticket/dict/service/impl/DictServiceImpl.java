@@ -4,13 +4,16 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.wj.omniagent.modules.ticket.dict.service.DictService;
 import com.wj.omniagent.modules.ticket.mapper.TicketCategoryMapper;
 import com.wj.omniagent.modules.ticket.mapper.TicketPriorityMapper;
+import com.wj.omniagent.modules.ticket.mapper.TicketSourceMapper;
 import com.wj.omniagent.modules.ticket.mapper.TicketStatusMapper;
 import com.wj.omniagent.modules.ticket.pojo.dos.TicketCategories;
 import com.wj.omniagent.modules.ticket.pojo.dos.TicketPriorities;
+import com.wj.omniagent.modules.ticket.pojo.dos.TicketSources;
 import com.wj.omniagent.modules.ticket.pojo.dos.TicketStatuses;
 import com.wj.omniagent.modules.ticket.pojo.vo.dict.CategoryOptionVO;
 import com.wj.omniagent.modules.ticket.pojo.vo.dict.DictGroupVO;
 import com.wj.omniagent.modules.ticket.pojo.vo.dict.PriorityOptionVO;
+import com.wj.omniagent.modules.ticket.pojo.vo.dict.SourceOptionVO;
 import com.wj.omniagent.modules.ticket.pojo.vo.dict.StatusOptionVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -33,12 +36,15 @@ public class DictServiceImpl implements DictService {
 
     private final TicketPriorityMapper priorityMapper;
 
+    private final TicketSourceMapper sourceMapper;
+
     @Override
     public DictGroupVO getAllDicts() {
         DictGroupVO group = new DictGroupVO();
         group.setCategories(listCategories());
         group.setStatuses(listStatuses());
         group.setPriorities(listPriorities());
+        group.setSources(listSources());
         return group;
     }
 
@@ -93,6 +99,24 @@ public class DictServiceImpl implements DictService {
         vo.setLabel(e.getPriorityName());
         vo.setResponseSlaMinutes(e.getResponseSlaMinutes());
         vo.setResolveSlaMinutes(e.getResolveSlaMinutes());
+        vo.setSortOrder(e.getSortOrder());
+        return vo;
+    }
+
+    @Override
+    public List<SourceOptionVO> listSources() {
+        return sourceMapper.selectList(
+                        new LambdaQueryWrapper<TicketSources>().orderByAsc(TicketSources::getSortOrder))
+                .stream()
+                .map(this::toSourceVO)
+                .collect(Collectors.toList());
+    }
+
+    private SourceOptionVO toSourceVO(TicketSources e) {
+        SourceOptionVO vo = new SourceOptionVO();
+        // 来源使用编码作为 value（与 tickets.source 列一致），名称为 label
+        vo.setValue(e.getSourceCode());
+        vo.setLabel(e.getSourceName());
         vo.setSortOrder(e.getSortOrder());
         return vo;
     }

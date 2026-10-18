@@ -3,6 +3,7 @@ package com.wj.omniagent.modules.ticket.dict.service;
 import com.wj.omniagent.modules.ticket.pojo.vo.dict.CategoryOptionVO;
 import com.wj.omniagent.modules.ticket.pojo.vo.dict.DictGroupVO;
 import com.wj.omniagent.modules.ticket.pojo.vo.dict.PriorityOptionVO;
+import com.wj.omniagent.modules.ticket.pojo.vo.dict.SourceOptionVO;
 import com.wj.omniagent.modules.ticket.pojo.vo.dict.StatusOptionVO;
 
 import java.util.List;
@@ -13,7 +14,7 @@ import java.util.List;
 public interface DictService {
 
     /**
-     * 查询全部字典（分类/状态/优先级）
+     * 查询全部字典（分类/状态/优先级/来源）
      */
     DictGroupVO getAllDicts();
 
@@ -31,4 +32,9 @@ public interface DictService {
      * 查询工单优先级列表
      */
     List<PriorityOptionVO> listPriorities();
+
+    /**
+     * 查询工单来源列表
+     */
+    List<SourceOptionVO> listSources();
 }

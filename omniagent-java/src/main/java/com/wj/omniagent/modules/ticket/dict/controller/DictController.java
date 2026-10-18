@@ -5,6 +5,7 @@ import com.wj.omniagent.modules.ticket.dict.service.DictService;
 import com.wj.omniagent.modules.ticket.pojo.vo.dict.CategoryOptionVO;
 import com.wj.omniagent.modules.ticket.pojo.vo.dict.DictGroupVO;
 import com.wj.omniagent.modules.ticket.pojo.vo.dict.PriorityOptionVO;
+import com.wj.omniagent.modules.ticket.pojo.vo.dict.SourceOptionVO;
 import com.wj.omniagent.modules.ticket.pojo.vo.dict.StatusOptionVO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -50,5 +51,11 @@ public class DictController {
     @GetMapping("/priorities")
     public ResponseResult<List<PriorityOptionVO>> priorities() {
         return ResponseResult.success(dictService.listPriorities());
+    }
+
+    @Operation(summary = "查询工单来源", description = "返回工单来源编码与名称（如 WEB/APP/EMAIL/PHONE/AGENT），用于来源下拉框")
+    @GetMapping("/sources")
+    public ResponseResult<List<SourceOptionVO>> sources() {
+        return ResponseResult.success(dictService.listSources());
     }
 }

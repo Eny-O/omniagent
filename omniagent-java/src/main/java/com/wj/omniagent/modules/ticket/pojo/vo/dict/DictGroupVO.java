@@ -1,5 +1,6 @@
 package com.wj.omniagent.modules.ticket.pojo.vo.dict;
 
+import com.wj.omniagent.modules.ticket.pojo.vo.dict.SourceOptionVO;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
@@ -22,4 +23,7 @@ public class DictGroupVO {
 
     @Schema(description = "优先级列表")
     private List<PriorityOptionVO> priorities;
+
+    @Schema(description = "来源列表")
+    private List<SourceOptionVO> sources;
 }
