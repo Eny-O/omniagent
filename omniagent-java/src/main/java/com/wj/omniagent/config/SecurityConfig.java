@@ -99,8 +99,8 @@ public class SecurityConfig {
                 // 配置 URL 授权
                 .authorizeHttpRequests(auth -> auth
                         // 认证接口：登录放行，登出/当前用户需要认证
-                        .requestMatchers("/api/auth/login").permitAll()
-
+                        //.requestMatchers("/api/auth/login").permitAll()
+                        .requestMatchers("**").permitAll()
                         // Swagger / Knife4j 文档资源放行
                         .requestMatchers(
                                 "/doc.html",

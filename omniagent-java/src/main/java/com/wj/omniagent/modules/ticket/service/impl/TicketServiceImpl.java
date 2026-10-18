@@ -7,7 +7,13 @@ import com.wj.omniagent.common.enums.ErrorCodeEnum;
 import com.wj.omniagent.common.pojo.result.PageResult;
 
 import com.wj.omniagent.exception.BusinessException;
+import com.wj.omniagent.modules.ticket.mapper.TicketCategoryMapper;
 import com.wj.omniagent.modules.ticket.mapper.TicketMapper;
+import com.wj.omniagent.modules.ticket.mapper.TicketPriorityMapper;
+import com.wj.omniagent.modules.ticket.mapper.TicketSourceMapper;
+import com.wj.omniagent.modules.ticket.pojo.dos.TicketCategories;
+import com.wj.omniagent.modules.ticket.pojo.dos.TicketPriorities;
+import com.wj.omniagent.modules.ticket.pojo.dos.TicketSources;
 import com.wj.omniagent.modules.ticket.pojo.dos.Tickets;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketCreateDTO;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketQuery;
@@ -40,11 +46,23 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
 
     private final TicketNoGenerator ticketNoGenerator;
 
+    private final TicketCategoryMapper ticketCategoryMapper;
+
+    private final TicketPriorityMapper ticketPriorityMapper;
+
+    private final TicketSourceMapper ticketSourceMapper;
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public TicketVO createTicket(TicketCreateDTO dto, Long operatorId) {
         Assert.notNull(dto, "创建工单请求不能为空");
         Assert.hasText(dto.getTitle(), "工单标题不能为空");
+
+        // 校验外键字典是否存在（分类/优先级/来源），非法值直接返回友好错误
+        assertCategoryExists(dto.getCategoryId());
+        assertPriorityExists(dto.getPriorityId());
+        String effectiveSource = StringUtils.hasText(dto.getSource()) ? dto.getSource().trim() : "WEB";
+        assertSourceExists(effectiveSource);
 
         Tickets ticket = new Tickets();
         BeanUtils.copyProperties(dto, ticket);
@@ -55,11 +73,7 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
         }
         ticket.setStatusId(TicketStatusEnum.DRAFT.getSortOrder());
         ticket.setCreatorId(operatorId);
-        if (!StringUtils.hasText(dto.getSource())) {
-            ticket.setSource("WEB");
-        } else {
-            ticket.setSource(dto.getSource().trim());
-        }
+        ticket.setSource(effectiveSource);
         ticket.setCreatedAt(LocalDateTime.now());
         ticket.setUpdatedAt(LocalDateTime.now());
 
@@ -220,9 +234,11 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
             ticket.setDescription(dto.getDescription().trim());
         }
         if (dto.getCategoryId() != null) {
+            assertCategoryExists(dto.getCategoryId());
             ticket.setCategoryId(dto.getCategoryId());
         }
         if (dto.getPriorityId() != null) {
+            assertPriorityExists(dto.getPriorityId());
             ticket.setPriorityId(dto.getPriorityId());
         }
         if (dto.getCurrentAssigneeId() != null) {
@@ -257,6 +273,45 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
                 .filter(s -> s.getSortOrder().equals(statusId))
                 .findFirst()
                 .orElseThrow(() -> new BusinessException(ErrorCodeEnum.TICKET_STATUS_ERROR, "工单状态异常"));
+    }
+
+    /**
+     * 校验工单分类是否存在（空值跳过）
+     */
+    private void assertCategoryExists(Integer categoryId) {
+        if (categoryId == null) {
+            return;
+        }
+        if (ticketCategoryMapper.selectCount(
+                new LambdaQueryWrapper<TicketCategories>().eq(TicketCategories::getId, categoryId)) == 0) {
+            throw new BusinessException(ErrorCodeEnum.TICKET_CATEGORY_NOT_FOUND);
+        }
+    }
+
+    /**
+     * 校验工单优先级是否存在（空值跳过，优先级非必填）
+     */
+    private void assertPriorityExists(Integer priorityId) {
+        if (priorityId == null) {
+            return;
+        }
+        if (ticketPriorityMapper.selectCount(
+                new LambdaQueryWrapper<TicketPriorities>().eq(TicketPriorities::getId, priorityId)) == 0) {
+            throw new BusinessException(ErrorCodeEnum.TICKET_PRIORITY_NOT_FOUND);
+        }
+    }
+
+    /**
+     * 校验工单来源编码是否存在（空值跳过）
+     */
+    private void assertSourceExists(String sourceCode) {
+        if (!StringUtils.hasText(sourceCode)) {
+            return;
+        }
+        if (ticketSourceMapper.selectCount(
+                new LambdaQueryWrapper<TicketSources>().eq(TicketSources::getSourceCode, sourceCode.trim())) == 0) {
+            throw new BusinessException(ErrorCodeEnum.TICKET_SOURCE_NOT_FOUND, "工单来源不存在: " + sourceCode);
+        }
     }
 
     private TicketPageVO convertToPageVO(Tickets ticket) {

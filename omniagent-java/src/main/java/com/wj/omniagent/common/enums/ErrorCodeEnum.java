@@ -35,6 +35,9 @@ public enum ErrorCodeEnum {
     TICKET_STATUS_INVALID_TRANSITION("2003", "工单状态流转不合法"),
     TICKET_STATUS_ERROR("2004", "工单状态异常"),
     TICKET_CLOSED_NOT_UPDATE("2005", "工单已关闭，不允许修改"),
+    TICKET_CATEGORY_NOT_FOUND("2006", "工单分类不存在"),
+    TICKET_PRIORITY_NOT_FOUND("2007", "工单优先级不存在"),
+    TICKET_SOURCE_NOT_FOUND("2008", "工单来源不存在"),
 
     // 部门错误码
     DEPT_NOT_FOUND("3001", "部门不存在"),
