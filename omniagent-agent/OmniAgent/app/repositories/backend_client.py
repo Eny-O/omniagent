@@ -96,3 +96,50 @@ async def page_tickets(
 async def create_ticket(payload: dict, *, acting_user: int | None = None) -> dict:
     """创建工单（payload 对齐 Java TicketCreateDTO）"""
     return await request("POST", "/api/tickets", json=payload, acting_user=acting_user)
+
+
+async def get_ticket(
+    ticket_id: int,
+    *,
+    acting_user: int | None = None,
+) -> dict:
+    """查询工单详情（GET /api/tickets/{id}）"""
+    return await request("GET", f"/api/tickets/{ticket_id}", acting_user=acting_user)
+
+
+async def update_ticket_status(
+    ticket_id: int,
+    target_status_code: str,
+    remark: str | None = None,
+    *,
+    acting_user: int | None = None,
+) -> dict:
+    """更新工单状态（PUT /api/tickets/{id}/status）。
+    target_status_code 为状态编码：DRAFT/PENDING/PROCESSING/RESOLVED/CLOSED。"""
+    body = {"targetStatusCode": target_status_code}
+    if remark is not None:
+        body["remark"] = remark
+    return await request(
+        "PUT", f"/api/tickets/{ticket_id}/status", json=body, acting_user=acting_user
+    )
+
+
+async def delete_ticket(
+    ticket_id: int,
+    *,
+    acting_user: int | None = None,
+) -> dict:
+    """删除工单（DELETE /api/tickets/{id}）"""
+    return await request("DELETE", f"/api/tickets/{ticket_id}", acting_user=acting_user)
+
+
+async def update_ticket(
+    ticket_id: int,
+    payload: dict,
+    *,
+    acting_user: int | None = None,
+) -> dict:
+    """更新工单基本信息（PUT /api/tickets/{id}，部分更新）"""
+    return await request(
+        "PUT", f"/api/tickets/{ticket_id}", json=payload, acting_user=acting_user
+    )
