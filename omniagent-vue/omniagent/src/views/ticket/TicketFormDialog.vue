@@ -4,7 +4,7 @@ import type { TicketForm } from '@/types/ticket'
 import { getTicketById } from '@/api/ticket'
 import { useDictStore } from '@/stores/dict'
 
-// 字典下拉选项由 dict store 动态提供（来源 sourceOptions 仍硬编码，后端未纳入字典）
+// 字典下拉选项（分类/优先级/来源）均由 dict store 动态提供
 const dictStore = useDictStore()
 
 const props = defineProps<{
@@ -60,13 +60,6 @@ const rules = {
   contactPhone: [{ validator: validatePhone, trigger: 'blur' }],
   contactEmail: [{ validator: validateEmail, trigger: 'blur' }],
 }
-
-const sourceOptions = [
-  { label: 'Web', value: 'WEB' },
-  { label: 'App', value: 'APP' },
-  { label: '电话', value: 'PHONE' },
-  { label: '邮件', value: 'EMAIL' },
-]
 
 watch(
   () => props.visible,
@@ -172,7 +165,7 @@ const handleSubmit = async () => {
           <el-form-item label="来源">
             <el-select v-model="formData.source" placeholder="请选择" style="width: 100%">
               <el-option
-                v-for="item in sourceOptions"
+                v-for="item in dictStore.sourceOptions"
                 :key="item.value"
                 :label="item.label"
                 :value="item.value"

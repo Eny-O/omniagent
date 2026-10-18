@@ -33,12 +33,23 @@ export interface PriorityOptionVO {
 }
 
 /**
+ * 工单来源下拉选项（与后端 SourceOptionVO 对齐）
+ * 注意：来源字典 value 为来源编码（如 WEB/AGENT），非主键 id
+ */
+export interface SourceOptionVO {
+  value: string
+  label: string
+  sortOrder: number | null
+}
+
+/**
  * 工单全部字典分组（与后端 DictGroupVO 对齐）
  */
 export interface DictGroupVO {
   categories: CategoryOptionVO[]
   statuses: StatusOptionVO[]
   priorities: PriorityOptionVO[]
+  sources: SourceOptionVO[]
 }
 
 /**
@@ -67,4 +78,11 @@ export const getStatuses = async (): Promise<ResponseResult<StatusOptionVO[]>> =
  */
 export const getPriorities = async (): Promise<ResponseResult<PriorityOptionVO[]>> => {
   return await request.get('/dict/priorities')
+}
+
+/**
+ * 查询工单来源
+ */
+export const getSources = async (): Promise<ResponseResult<SourceOptionVO[]>> => {
+  return await request.get('/dict/sources')
 }
