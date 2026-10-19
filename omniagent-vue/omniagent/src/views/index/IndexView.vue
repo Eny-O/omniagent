@@ -7,7 +7,12 @@ const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
 
-const activeMenu = computed(() => route.path)
+const activeMenu = computed(() => {
+  // 详情页 /tickets/:id 高亮「工单管理」父菜单
+  const p = route.path
+  if (p.startsWith('/tickets/')) return '/tickets'
+  return p
+})
 const currentUserName = computed(() => userStore.user?.realName || userStore.user?.username || '未登录')
 
 onMounted(() => {
@@ -21,20 +26,33 @@ const handleLogout = () => {
   userStore.doLogout()
 }
 
-const menuItems = [
-  {
-    path: '/tickets',
-    title: '工单管理',
-  },
-  {
-    path: '/users',
-    title: '用户管理',
-  },
-  {
-    path: '/departments',
-    title: '部门管理',
-  },
-]
+// 菜单按当前角色显隐：
+// - REPORTER：仅「我的报障」
+// - HANDLER / SUPERVISOR：仅管理类菜单（工单/用户/部门）
+// - ADMIN：管理类菜单 + 「我的报障」（便于以报障视角调试）
+// - 调试期（角色为空）：展示全部入口
+const visibleMenuItems = computed(() => {
+  const role = userStore.currentRole
+  const items: { path: string; title: string }[] = []
+  if (role === null) {
+    items.push({ path: '/tickets', title: '工单管理' })
+    items.push({ path: '/users', title: '用户管理' })
+    items.push({ path: '/departments', title: '部门管理' })
+    items.push({ path: '/reporter-tickets', title: '我的报障' })
+    return items
+  }
+  if (role === 'REPORTER') {
+    items.push({ path: '/reporter-tickets', title: '我的报障' })
+  } else {
+    items.push({ path: '/tickets', title: '工单管理' })
+    items.push({ path: '/users', title: '用户管理' })
+    items.push({ path: '/departments', title: '部门管理' })
+    if (role === 'ADMIN') {
+      items.push({ path: '/reporter-tickets', title: '我的报障' })
+    }
+  }
+  return items
+})
 
 const handleMenuSelect = (path: string) => {
   router.push(path)
@@ -62,7 +80,7 @@ const handleMenuSelect = (path: string) => {
           @select="handleMenuSelect"
         >
           <el-menu-item
-            v-for="item in menuItems"
+            v-for="item in visibleMenuItems"
             :key="item.path"
             :index="item.path"
             class="menu-item"
@@ -185,6 +203,43 @@ const handleMenuSelect = (path: string) => {
                 rx="1"
                 stroke="currentColor"
                 stroke-width="2"
+              />
+            </svg>
+            <!-- 我的报障图标 -->
+            <svg
+              v-else-if="item.path === '/reporter-tickets'"
+              class="menu-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M9 5H7C5.89543 5 5 5.89543 5 7V19C5 20.1046 5.89543 21 7 21H17C18.1046 21 19 20.1046 19 19V7C19 5.89543 18.1046 5 17 5H15"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <path
+                d="M12 3V5"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <path
+                d="M12 12V17"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <path
+                d="M9.5 14.5L12 12L14.5 14.5"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
               />
             </svg>
             <span class="menu-title">{{ item.title }}</span>

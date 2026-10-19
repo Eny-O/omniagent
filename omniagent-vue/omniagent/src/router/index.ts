@@ -21,7 +21,6 @@ const router = createRouter({
       path: '/',
       name: 'Layout',
       component: () => import('@/views/index/IndexView.vue'),
-      redirect: '/tickets',
       children: [
         {
           path: '/tickets',
@@ -54,34 +53,49 @@ const router = createRouter({
   ],
 })
 
-// 路由守卫：未登录用户只能访问登录页；已登录用户访问登录页自动跳转到工单列表
+// 路由守卫：
+// 1) 未登录只能访问登录页；其余先确认 Session 是否有效
+// 2) 按角色分流：报障人(REPORTER)进入「我的报障」，其余进入「工单管理」
+// 3) 调试期（角色为空）放行所有页面，便于联调
 // Vue Router 4 推荐直接 return 值，不再使用 next() 回调
 router.beforeEach(async (to) => {
   const userStore = useUserStore()
 
-  // 如果 Pinia 中已有用户信息，直接判断
-  if (userStore.isLoggedIn) {
-    if (to.path === '/login') {
-      return '/tickets'
+  // 未登录：登录页直接放行；其余先确认 Session 是否有效
+  if (!userStore.isLoggedIn) {
+    if (to.path === '/login') return true
+    try {
+      const ok = await userStore.fetchCurrentUser()
+      if (!ok) return '/login'
+    } catch {
+      return '/login'
     }
-    return true
   }
 
-  // 未登录时访问登录页，直接放行
+  // 此时已确认登录；若仍访问登录页则按角色跳默认首页
   if (to.path === '/login') {
-    return true
+    return userStore.currentRole === 'REPORTER' ? '/reporter-tickets' : '/tickets'
   }
 
-  // 访问其他页面时，先请求后端确认 Session 是否有效
-  try {
-    const isLogin = await userStore.fetchCurrentUser()
-    if (isLogin) {
-      return true
-    }
-  } catch {
-    // fetchCurrentUser 内部已经会跳转登录页，这里直接拒绝导航即可
+  // 根路径按角色分流
+  if (to.path === '/') {
+    return userStore.currentRole === 'REPORTER' ? '/reporter-tickets' : '/tickets'
   }
-  return '/login'
+
+  // 工单管理：报障人不可进入，自动转入「我的报障」
+  if (to.path === '/tickets' && userStore.currentRole === 'REPORTER') {
+    return '/reporter-tickets'
+  }
+
+  // 我的报障：仅报障人与管理员（调试）可进入；处理人/主管不可
+  if (
+    to.path === '/reporter-tickets' &&
+    (userStore.currentRole === 'HANDLER' || userStore.currentRole === 'SUPERVISOR')
+  ) {
+    return '/tickets'
+  }
+
+  return true
 })
 
 export default router
