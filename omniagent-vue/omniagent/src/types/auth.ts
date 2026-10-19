@@ -24,6 +24,7 @@ export interface LoginUserVO {
   email: string
   phone: string
   deptId: number | null
+  role: string
   status: number
   createdAt: string
   loginAt: string

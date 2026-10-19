@@ -18,6 +18,9 @@ export const useUserStore = defineStore('user', () => {
   // 是否已登录
   const isLoggedIn = computed(() => user.value !== null)
 
+  // 当前登录用户角色（REPORTER/HANDLER/SUPERVISOR/ADMIN），未登录为 null
+  const currentRole = computed(() => user.value?.role ?? null)
+
   /**
    * 设置当前用户
    */
@@ -79,6 +82,7 @@ export const useUserStore = defineStore('user', () => {
   return {
     user,
     isLoggedIn,
+    currentRole,
     setUser,
     clearUser,
     doLogin,

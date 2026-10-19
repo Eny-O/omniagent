@@ -30,6 +30,9 @@ public class LoginUserVO {
     @Schema(description = "部门ID")
     private Long deptId;
 
+    @Schema(description = "角色：REPORTER/HANDLER/SUPERVISOR/ADMIN")
+    private String role;
+
     @Schema(description = "状态：1=启用，0=禁用")
     private Integer status;
 

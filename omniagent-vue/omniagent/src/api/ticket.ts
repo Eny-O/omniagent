@@ -1,6 +1,10 @@
 import type {
+  TicketAssignDTO,
+  TicketComment,
+  TicketCommentCreateDTO,
   TicketCreateDTO,
   TicketForm,
+  TicketHistory,
   TicketPageVO,
   TicketQuery,
   TicketUpdateDTO,
@@ -77,4 +81,49 @@ export const updateTicketStatus = async (
  */
 export const deleteTicket = async (id: number): Promise<ResponseResult<void>> => {
   return await request.delete(`/tickets/${id}`)
+}
+
+/**
+ * 撤回工单（报障人未处理前撤回 / 管理员撤回）
+ */
+export const withdrawTicket = async (id: number): Promise<ResponseResult<void>> => {
+  return await request.post(`/tickets/${id}/withdraw`)
+}
+
+/**
+ * 派单（主管 / 管理员指定处理人并进入处理中）
+ */
+export const assignTicket = async (
+  id: number,
+  dto: TicketAssignDTO,
+): Promise<ResponseResult<void>> => {
+  return await request.post(`/tickets/${id}/assign`, dto)
+}
+
+/**
+ * 查询工单操作历史（审计轨迹），按操作时间升序
+ */
+export const getTicketHistory = async (
+  id: number,
+): Promise<ResponseResult<TicketHistory[]>> => {
+  return await request.get(`/tickets/${id}/history`)
+}
+
+/**
+ * 查询工单评论列表（报障人仅返回非内部备注）
+ */
+export const listComments = async (
+  id: number,
+): Promise<ResponseResult<TicketComment[]>> => {
+  return await request.get(`/tickets/${id}/comments`)
+}
+
+/**
+ * 新增工单评论 / 备注（仅处理人 / 主管 / 管理员可写，终态工单禁止）
+ */
+export const addComment = async (
+  id: number,
+  dto: TicketCommentCreateDTO,
+): Promise<ResponseResult<TicketComment>> => {
+  return await request.post(`/tickets/${id}/comments`, dto)
 }
