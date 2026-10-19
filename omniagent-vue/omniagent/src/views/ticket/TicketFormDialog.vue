@@ -10,6 +10,7 @@ const dictStore = useDictStore()
 const props = defineProps<{
   visible: boolean
   ticket?: TicketForm
+  reporterMode?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -161,7 +162,7 @@ const handleSubmit = async () => {
       </el-row>
 
       <el-row :gutter="16">
-        <el-col :span="12">
+        <el-col v-if="!reporterMode" :span="12">
           <el-form-item label="来源">
             <el-select v-model="formData.source" placeholder="请选择" style="width: 100%">
               <el-option
@@ -173,7 +174,7 @@ const handleSubmit = async () => {
             </el-select>
           </el-form-item>
         </el-col>
-        <el-col :span="12">
+        <el-col v-if="!reporterMode" :span="12">
           <el-form-item label="处理人">
             <el-input-number
               v-model="formData.currentAssigneeId"

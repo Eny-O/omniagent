@@ -1,6 +1,13 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 
+declare module 'vue-router' {
+  interface RouteMeta {
+    public?: boolean
+    roles?: string[]
+  }
+}
+
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
@@ -25,6 +32,12 @@ const router = createRouter({
           path: '/tickets/:id',
           name: 'TicketDetail',
           component: () => import('@/views/ticket/TicketDetailView.vue'),
+        },
+        {
+          path: '/reporter-tickets',
+          name: 'ReporterTickets',
+          component: () => import('@/views/ticket/ReporterTicketView.vue'),
+          meta: { roles: ['REPORTER'] },
         },
         {
           path: '/users',
