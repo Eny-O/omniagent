@@ -15,6 +15,7 @@ import com.wj.omniagent.modules.ticket.mapper.TicketMapper;
 import com.wj.omniagent.modules.ticket.mapper.TicketPriorityMapper;
 import com.wj.omniagent.modules.ticket.mapper.TicketSourceMapper;
 import com.wj.omniagent.modules.ticket.mapper.TicketAssignmentsMapper;
+import com.wj.omniagent.modules.ticket.mapper.TicketHistoryMapper;
 import com.wj.omniagent.modules.user.mapper.UserMapper;
 import com.wj.omniagent.modules.user.pojo.dos.Users;
 import com.wj.omniagent.modules.user.service.security.LoginUserPrincipal;
@@ -23,6 +24,7 @@ import com.wj.omniagent.modules.ticket.pojo.dos.TicketPriorities;
 import com.wj.omniagent.modules.ticket.pojo.dos.TicketSources;
 import com.wj.omniagent.modules.ticket.pojo.dos.Tickets;
 import com.wj.omniagent.modules.ticket.pojo.dos.TicketAssignments;
+import com.wj.omniagent.modules.ticket.pojo.dos.TicketHistory;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketCreateDTO;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketQuery;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketUpdateDTO;
@@ -30,6 +32,7 @@ import com.wj.omniagent.modules.ticket.pojo.dto.TicketUpdateStatusDTO;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketAssignDTO;
 import com.wj.omniagent.modules.ticket.pojo.enums.DataScope;
 import com.wj.omniagent.modules.ticket.pojo.enums.TicketStatusEnum;
+import com.wj.omniagent.modules.ticket.pojo.enums.TicketActionEnum;
 import com.wj.omniagent.modules.ticket.pojo.vo.TicketPageVO;
 import com.wj.omniagent.modules.ticket.pojo.vo.TicketVO;
 import com.wj.omniagent.modules.ticket.service.TicketService;
@@ -66,6 +69,7 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
     private final UserMapper userMapper;
 
     private final TicketAssignmentsMapper ticketAssignmentMapper;
+    private final TicketHistoryMapper ticketHistoryMapper;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -108,6 +112,8 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
             }
         }
 
+        recordHistory(ticket.getId(), operatorId, TicketActionEnum.CREATE, null, null, null,
+                "创建工单 " + ticket.getTicketNo());
         return convertToVO(ticket);
     }
 
@@ -185,10 +191,13 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
         assertEditable(ticket, currentStatus);
 
         // 仅更新非空字段，避免把已有值覆盖成 null
+        Tickets beforeUpdate = new Tickets();
+        BeanUtils.copyProperties(ticket, beforeUpdate);
         applyUpdateFields(ticket, dto);
         ticket.setUpdatedAt(LocalDateTime.now());
 
         ticketMapper.updateById(ticket);
+        recordUpdateHistory(ticket.getId(), operatorId, beforeUpdate, ticket);
 
         return convertToVO(ticket);
     }
@@ -238,7 +247,8 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
 
         ticketMapper.updateById(ticket);
 
-        // TODO: 记录 ticket_history（后续补充）
+        recordHistory(ticket.getId(), operatorId, TicketActionEnum.STATUS_CHANGE, "status",
+                currentStatus.name(), targetStatus.name(), null);
     }
 
     @Override
@@ -251,6 +261,7 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
         }
         // 仅管理员可硬删除工单；调试期（未鉴权）放行
         assertCanDelete();
+        recordHistory(id, SecurityUtils.getCurrentUserId(), TicketActionEnum.DELETE, null, null, null, "删除工单");
         ticketMapper.deleteById(id);
     }
 
@@ -268,7 +279,8 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
         ticket.setStatusId(TicketStatusEnum.CANCELLED.getSortOrder());
         ticket.setUpdatedAt(LocalDateTime.now());
         ticketMapper.updateById(ticket);
-        // TODO: 记录 ticket_history（REPORTER 撤回，第6批补充审计）
+        recordHistory(ticket.getId(), operatorId, TicketActionEnum.WITHDRAW, "status",
+                currentStatus.name(), TicketStatusEnum.CANCELLED.name(), null);
     }
 
     @Override
@@ -282,6 +294,7 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
         if (ticket == null) {
             throw new BusinessException(ErrorCodeEnum.TICKET_NOT_FOUND);
         }
+        Long oldAssigneeId = ticket.getCurrentAssigneeId();
         // 被指派人必须存在
         if (userMapper.selectById(dto.getAssigneeId()) == null) {
             throw new BusinessException(ErrorCodeEnum.ASSIGNEE_NOT_FOUND);
@@ -316,7 +329,9 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
         ticket.setUpdatedAt(LocalDateTime.now());
         ticketMapper.updateById(ticket);
 
-        // TODO: 记录 ticket_history（ASSIGN 审计，第6批补充）
+        recordHistory(ticket.getId(), operatorId, TicketActionEnum.ASSIGN, "current_assignee_id",
+                oldAssigneeId == null ? null : oldAssigneeId.toString(),
+                dto.getAssigneeId().toString(), dto.getRemark());
     }
 
     private void applyUpdateFields(Tickets ticket, TicketUpdateDTO dto) {
@@ -356,6 +371,56 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
         if (dto.getExpectedResolveAt() != null) {
             ticket.setExpectedResolveAt(dto.getExpectedResolveAt());
         }
+    }
+
+    // ===================== 审计历史 =====================
+
+    /**
+     * 记录一条工单操作历史。
+     */
+    private void recordHistory(Long ticketId, Long operatorId, TicketActionEnum action,
+                               String fieldName, String oldValue, String newValue, String remark) {
+        TicketHistory history = new TicketHistory();
+        history.setTicketId(ticketId);
+        history.setOperatorId(operatorId);
+        history.setOperation(action.getCode());
+        history.setFieldName(fieldName);
+        history.setOldValue(oldValue);
+        history.setNewValue(newValue);
+        history.setRemark(remark);
+        history.setCreatedAt(LocalDateTime.now());
+        ticketHistoryMapper.insert(history);
+    }
+
+    /**
+     * 记录单个字段的变更（值未变化则跳过）。
+     */
+    private void recordFieldChange(Long ticketId, Long operatorId, String fieldName,
+                                   Object oldValue, Object newValue) {
+        if (oldValue == null && newValue == null) {
+            return;
+        }
+        if (oldValue != null && oldValue.equals(newValue)) {
+            return;
+        }
+        recordHistory(ticketId, operatorId, TicketActionEnum.UPDATE, fieldName,
+                oldValue == null ? null : oldValue.toString(),
+                newValue == null ? null : newValue.toString(), null);
+    }
+
+    /**
+     * 对比更新前后工单，逐字段记录变更历史。
+     */
+    private void recordUpdateHistory(Long ticketId, Long operatorId, Tickets before, Tickets after) {
+        recordFieldChange(ticketId, operatorId, "title", before.getTitle(), after.getTitle());
+        recordFieldChange(ticketId, operatorId, "description", before.getDescription(), after.getDescription());
+        recordFieldChange(ticketId, operatorId, "category_id", before.getCategoryId(), after.getCategoryId());
+        recordFieldChange(ticketId, operatorId, "priority_id", before.getPriorityId(), after.getPriorityId());
+        recordFieldChange(ticketId, operatorId, "current_assignee_id", before.getCurrentAssigneeId(), after.getCurrentAssigneeId());
+        recordFieldChange(ticketId, operatorId, "contact_phone", before.getContactPhone(), after.getContactPhone());
+        recordFieldChange(ticketId, operatorId, "contact_email", before.getContactEmail(), after.getContactEmail());
+        recordFieldChange(ticketId, operatorId, "location", before.getLocation(), after.getLocation());
+        recordFieldChange(ticketId, operatorId, "expected_resolve_at", before.getExpectedResolveAt(), after.getExpectedResolveAt());
     }
 
     private TicketStatusEnum getStatusBySortOrder(Integer statusId) {
