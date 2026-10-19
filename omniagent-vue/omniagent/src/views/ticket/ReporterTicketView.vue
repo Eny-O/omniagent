@@ -101,8 +101,9 @@ const handleEdit = (row: TicketPageVO) => {
 }
 
 // 查看详情：复用 TicketDetailView（已按角色收敛，reporter 仅见撤回 / 公开备注）
+// 带上 from=reporter，使详情页"返回"能回到「我的报障」而非「工单管理」
 const goDetail = (row: TicketPageVO) => {
-  router.push(`/tickets/${row.id}`)
+  router.push(`/tickets/${row.id}?from=reporter`)
 }
 
 // 撤回 / 取消（仅草稿 / 待处理）

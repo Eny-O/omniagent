@@ -232,7 +232,15 @@ const onTabChange = (name: string) => {
   if (name === 'comments' && comments.value.length === 0) loadComments()
 }
 
-const goBack = () => router.push('/tickets')
+// 返回：来自「我的报障」(from=reporter) 则回该页，否则回「工单管理」
+// 这样 REPORTER / ADMIN 从「我的报障」进详情后不会掉进管理视角
+const goBack = () => {
+  if (route.query.from === 'reporter') {
+    router.push('/reporter-tickets')
+  } else {
+    router.push('/tickets')
+  }
+}
 
 onMounted(async () => {
   await dictStore.loadDicts()
