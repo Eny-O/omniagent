@@ -1,5 +1,6 @@
 package com.wj.omniagent.common.utils;
 
+import com.wj.omniagent.common.context.ActingContext;
 import com.wj.omniagent.modules.user.service.security.LoginUserPrincipal;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -58,14 +59,36 @@ public class SecurityUtils {
      */
     public static Long getCurrentUserId() {
         Authentication authentication = getCurrentAuthentication();
-        if (!isAuthenticated()) {
-            return null;
+        if (isAuthenticated()) {
+            Object principal = authentication.getPrincipal();
+            if (principal instanceof LoginUserPrincipal) {
+                return ((LoginUserPrincipal) principal).getId();
+            }
         }
+        // 回退：机器身份（Agent）通过 X-Acting-User 透传的具体用户ID
+        return ActingContext.getUserId();
+    }
 
-        Object principal = authentication.getPrincipal();
-        if (principal instanceof LoginUserPrincipal) {
-            return ((LoginUserPrincipal) principal).getId();
+    /**
+     * 获取当前操作人角色编码（REPORTER / HANDLER / SUPERVISOR / ADMIN）。
+     * <p>
+     * 优先取 Session 登录用户（LoginUserPrincipal）的角色；
+     * 否则取机器身份（ActingContext）透传的角色；
+     * 均无则返回 null（调试期未鉴权时为 null，由调用方决定宽松 / 严格策略）。
+     *
+     * @return 角色编码，无法确定返回 null
+     */
+    public static String getCurrentRole() {
+        Authentication authentication = getCurrentAuthentication();
+        if (isAuthenticated()) {
+            Object principal = authentication.getPrincipal();
+            if (principal instanceof LoginUserPrincipal) {
+                String role = ((LoginUserPrincipal) principal).getRole();
+                if (role != null) {
+                    return role;
+                }
+            }
         }
-        return null;
+        return ActingContext.getRole();
     }
 }

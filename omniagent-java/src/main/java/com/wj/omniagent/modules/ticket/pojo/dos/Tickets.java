@@ -43,6 +43,9 @@ public class Tickets {
     @Schema(description = "当前处理人ID", example = "2")
     private Long currentAssigneeId;
 
+    @Schema(description = "所属部门ID（用于主管按部门查看工单）", example = "1")
+    private Long deptId;
+
     @Schema(description = "工单来源", example = "WEB")
     private String source;
 

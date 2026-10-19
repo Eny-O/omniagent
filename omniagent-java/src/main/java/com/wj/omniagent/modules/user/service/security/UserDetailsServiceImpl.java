@@ -2,6 +2,7 @@ package com.wj.omniagent.modules.user.service.security;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.wj.omniagent.common.enums.ErrorCodeEnum;
+import com.wj.omniagent.common.enums.UserRoleEnum;
 import com.wj.omniagent.exception.BusinessException;
 import com.wj.omniagent.modules.user.mapper.UserMapper;
 import com.wj.omniagent.modules.user.pojo.dos.Users;
@@ -40,13 +41,15 @@ public class UserDetailsServiceImpl implements UserDetailsService {
             throw new UsernameNotFoundException("用户不存在: " + username);
         }
 
-        // 默认赋予普通用户角色，后续接入 RBAC 后可扩展
+        // 角色编码落库为 users.role；存量用户若尚未赋值，默认回退为 REPORTER（报障人）
+        String role = user.getRole() != null ? user.getRole() : UserRoleEnum.REPORTER.getCode();
         return new LoginUserPrincipal(
                 user.getId(),
                 user.getUsername(),
                 user.getPasswordHash(),
                 user.getStatus(),
-                Collections.singletonList(new SimpleGrantedAuthority("ROLE_USER")),
+                role,
+                Collections.singletonList(new SimpleGrantedAuthority("ROLE_" + role)),
                 isEnabled(user)
         );
     }

@@ -26,6 +26,8 @@ public class LoginUserPrincipal implements UserDetails {
 
     private final Integer status;
 
+    private final String role;
+
     @JsonIgnore
     private final Collection<? extends GrantedAuthority> authorities;
 
@@ -40,13 +42,14 @@ public class LoginUserPrincipal implements UserDetails {
 
     private final boolean enabled;
 
-    public LoginUserPrincipal(Long id, String username, String password, Integer status,
+    public LoginUserPrincipal(Long id, String username, String password, Integer status, String role,
                               Collection<? extends GrantedAuthority> authorities,
                               boolean enabled) {
         this.id = id;
         this.username = username;
         this.password = password;
         this.status = status;
+        this.role = role;
         this.authorities = authorities;
         this.accountNonExpired = true;
         this.accountNonLocked = true;

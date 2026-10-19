@@ -27,6 +27,7 @@ public enum ErrorCodeEnum {
     ACCOUNT_DISABLED("1006", "账号已被禁用"),
     PLEASE_FLUSH_AFTER_RETRY("1007", "请刷新页面后重试"),
     PARAM_ERROR("1008", "传入参数错误"),
+    ROLE_INVALID("1009", "用户角色非法或未知"),
 
     // 工单错误码
     TICKET_GENER_FAILED_RETRY("2000", "工单号生成失败，请重试"),
@@ -38,6 +39,7 @@ public enum ErrorCodeEnum {
     TICKET_CATEGORY_NOT_FOUND("2006", "工单分类不存在"),
     TICKET_PRIORITY_NOT_FOUND("2007", "工单优先级不存在"),
     TICKET_SOURCE_NOT_FOUND("2008", "工单来源不存在"),
+    TICKET_NO_PERMISSION("2009", "无权访问或操作该工单"),
 
     // 部门错误码
     DEPT_NOT_FOUND("3001", "部门不存在"),

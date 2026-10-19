@@ -38,6 +38,9 @@ public class Users {
     @Schema(description = "部门ID", example = "1")
     private Long deptId;
 
+    @Schema(description = "角色编码：REPORTER=报障人, HANDLER=处理人, SUPERVISOR=主管, ADMIN=管理员")
+    private String role;
+
     @Schema(description = "状态：1=启用，0=禁用", example = "1")
     private Integer status;
 
