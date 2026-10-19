@@ -40,6 +40,7 @@ public enum ErrorCodeEnum {
     TICKET_PRIORITY_NOT_FOUND("2007", "工单优先级不存在"),
     TICKET_SOURCE_NOT_FOUND("2008", "工单来源不存在"),
     TICKET_NO_PERMISSION("2009", "无权访问或操作该工单"),
+    ASSIGNEE_NOT_FOUND("2010", "被指派的处理人不存在"),
 
     // 部门错误码
     DEPT_NOT_FOUND("3001", "部门不存在"),

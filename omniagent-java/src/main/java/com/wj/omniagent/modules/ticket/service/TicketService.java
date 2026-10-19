@@ -8,6 +8,7 @@ import com.wj.omniagent.modules.ticket.pojo.dto.TicketCreateDTO;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketQuery;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketUpdateDTO;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketUpdateStatusDTO;
+import com.wj.omniagent.modules.ticket.pojo.dto.TicketAssignDTO;
 import com.wj.omniagent.modules.ticket.pojo.vo.TicketPageVO;
 import com.wj.omniagent.modules.ticket.pojo.vo.TicketVO;
 
@@ -50,5 +51,10 @@ public interface TicketService extends IService<Tickets> {
      * 撤回工单（报障人未处理前 / 管理员）
      */
     void withdrawTicket(Long id, Long operatorId);
+
+    /**
+     * 派单（主管 / 管理员）：指定处理人并进入处理中
+     */
+    void assignTicket(Long id, TicketAssignDTO dto, Long operatorId);
 }
 

@@ -7,6 +7,7 @@ import com.wj.omniagent.modules.ticket.pojo.dto.TicketCreateDTO;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketQuery;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketUpdateDTO;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketUpdateStatusDTO;
+import com.wj.omniagent.modules.ticket.pojo.dto.TicketAssignDTO;
 import com.wj.omniagent.modules.ticket.pojo.vo.TicketPageVO;
 import com.wj.omniagent.modules.ticket.pojo.vo.TicketVO;
 import com.wj.omniagent.modules.ticket.service.TicketService;
@@ -81,6 +82,15 @@ public class TicketController {
     public ResponseResult<TicketVO> withdraw(
             @Parameter(description = "工单ID") @PathVariable Long id) {
         ticketService.withdrawTicket(id, getCurrentUserId());
+        return ResponseResult.success(ticketService.getTicketById(id));
+    }
+
+    @Operation(summary = "派单（主管 / 管理员）")
+    @PostMapping("/{id}/assign")
+    public ResponseResult<TicketVO> assign(
+            @Parameter(description = "工单ID") @PathVariable Long id,
+            @RequestBody @Valid TicketAssignDTO dto) {
+        ticketService.assignTicket(id, dto, getCurrentUserId());
         return ResponseResult.success(ticketService.getTicketById(id));
     }
 

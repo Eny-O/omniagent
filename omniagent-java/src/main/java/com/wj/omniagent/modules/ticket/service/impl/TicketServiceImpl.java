@@ -1,6 +1,7 @@
 package com.wj.omniagent.modules.ticket.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.wj.omniagent.common.context.ActingContext;
@@ -13,6 +14,7 @@ import com.wj.omniagent.modules.ticket.mapper.TicketCategoryMapper;
 import com.wj.omniagent.modules.ticket.mapper.TicketMapper;
 import com.wj.omniagent.modules.ticket.mapper.TicketPriorityMapper;
 import com.wj.omniagent.modules.ticket.mapper.TicketSourceMapper;
+import com.wj.omniagent.modules.ticket.mapper.TicketAssignmentsMapper;
 import com.wj.omniagent.modules.user.mapper.UserMapper;
 import com.wj.omniagent.modules.user.pojo.dos.Users;
 import com.wj.omniagent.modules.user.service.security.LoginUserPrincipal;
@@ -20,10 +22,12 @@ import com.wj.omniagent.modules.ticket.pojo.dos.TicketCategories;
 import com.wj.omniagent.modules.ticket.pojo.dos.TicketPriorities;
 import com.wj.omniagent.modules.ticket.pojo.dos.TicketSources;
 import com.wj.omniagent.modules.ticket.pojo.dos.Tickets;
+import com.wj.omniagent.modules.ticket.pojo.dos.TicketAssignments;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketCreateDTO;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketQuery;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketUpdateDTO;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketUpdateStatusDTO;
+import com.wj.omniagent.modules.ticket.pojo.dto.TicketAssignDTO;
 import com.wj.omniagent.modules.ticket.pojo.enums.DataScope;
 import com.wj.omniagent.modules.ticket.pojo.enums.TicketStatusEnum;
 import com.wj.omniagent.modules.ticket.pojo.vo.TicketPageVO;
@@ -60,6 +64,8 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
     private final TicketSourceMapper ticketSourceMapper;
 
     private final UserMapper userMapper;
+
+    private final TicketAssignmentsMapper ticketAssignmentMapper;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -263,6 +269,54 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
         ticket.setUpdatedAt(LocalDateTime.now());
         ticketMapper.updateById(ticket);
         // TODO: 记录 ticket_history（REPORTER 撤回，第6批补充审计）
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void assignTicket(Long id, TicketAssignDTO dto, Long operatorId) {
+        Assert.notNull(id, "工单ID不能为空");
+        Assert.notNull(dto, "派单请求不能为空");
+        Assert.notNull(dto.getAssigneeId(), "被指派处理人不能为空");
+
+        Tickets ticket = ticketMapper.selectById(id);
+        if (ticket == null) {
+            throw new BusinessException(ErrorCodeEnum.TICKET_NOT_FOUND);
+        }
+        // 被指派人必须存在
+        if (userMapper.selectById(dto.getAssigneeId()) == null) {
+            throw new BusinessException(ErrorCodeEnum.ASSIGNEE_NOT_FOUND);
+        }
+        TicketStatusEnum currentStatus = getStatusBySortOrder(ticket.getStatusId());
+        // 仅 SUPERVISOR（本部门）/ ADMIN 可派单；调试期（未鉴权）放行
+        assertCanAssign(ticket);
+        // 终态工单不可再派单
+        if (currentStatus.isTerminal()) {
+            throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "已关闭/已取消的工单不可派单");
+        }
+
+        // 落分配记录：先将该工单的历史派单记录置为非当前，再插入当前派单（is_current=true）
+        LambdaUpdateWrapper<TicketAssignments> uw = new LambdaUpdateWrapper<>();
+        uw.eq(TicketAssignments::getTicketId, id).set(TicketAssignments::getIsCurrent, false);
+        ticketAssignmentMapper.update(null, uw);
+
+        TicketAssignments assignment = new TicketAssignments();
+        assignment.setTicketId(id);
+        assignment.setAssignorId(operatorId);
+        assignment.setAssigneeId(dto.getAssigneeId());
+        assignment.setRemark(dto.getRemark());
+        assignment.setAssignedAt(LocalDateTime.now());
+        assignment.setIsCurrent(true);
+        ticketAssignmentMapper.insert(assignment);
+
+        // 更新工单：写入当前处理人 + 进入处理中（DRAFT/PENDING 才流转，已 PROCESSING 则保持）
+        ticket.setCurrentAssigneeId(dto.getAssigneeId());
+        if (currentStatus == TicketStatusEnum.DRAFT || currentStatus == TicketStatusEnum.PENDING) {
+            ticket.setStatusId(TicketStatusEnum.PROCESSING.getSortOrder());
+        }
+        ticket.setUpdatedAt(LocalDateTime.now());
+        ticketMapper.updateById(ticket);
+
+        // TODO: 记录 ticket_history（ASSIGN 审计，第6批补充）
     }
 
     private void applyUpdateFields(Tickets ticket, TicketUpdateDTO dto) {
@@ -554,6 +608,26 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
                 }
             }
             default -> throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "仅报障人/管理员可撤回工单");
+        }
+    }
+
+    /**
+     * 派单权限：仅 SUPERVISOR（本部门）/ ADMIN 可派单；调试期放行。
+     */
+    private void assertCanAssign(Tickets ticket) {
+        String role = SecurityUtils.getCurrentRole();
+        if (role == null) {
+            return; // 调试期宽松
+        }
+        Long deptId = resolveCurrentDeptId();
+        switch (role) {
+            case "ADMIN" -> { /* 放行 */ }
+            case "SUPERVISOR" -> {
+                if (deptId == null || ticket.getDeptId() == null || !deptId.equals(ticket.getDeptId())) {
+                    throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "仅能派本部门工单");
+                }
+            }
+            default -> throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "仅主管/管理员可派单");
         }
     }
 
