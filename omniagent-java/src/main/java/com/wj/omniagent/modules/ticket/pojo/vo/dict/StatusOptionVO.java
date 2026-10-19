@@ -16,6 +16,9 @@ public class StatusOptionVO {
     @Schema(description = "状态名称，作为 el-select 的 label")
     private String label;
 
+    @Schema(description = "状态编码，如 DRAFT/PENDING/PROCESSING，供状态流转接口使用")
+    private String code;
+
     @Schema(description = "是否为终态（如已关闭）")
     private Boolean isTerminal;
 

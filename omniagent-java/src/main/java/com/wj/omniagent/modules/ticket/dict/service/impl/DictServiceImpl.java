@@ -88,6 +88,7 @@ public class DictServiceImpl implements DictService {
         StatusOptionVO vo = new StatusOptionVO();
         vo.setValue(e.getId());
         vo.setLabel(e.getStatusName());
+        vo.setCode(e.getStatusCode());
         vo.setIsTerminal(e.getIsTerminal());
         vo.setSortOrder(e.getSortOrder());
         return vo;

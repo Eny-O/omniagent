@@ -83,6 +83,7 @@ export const useDictStore = defineStore('dict', () => {
       3: 'primary',
       4: 'success',
       5: 'info',
+      6: 'info',
     }
     if (statusId == null) return 'info'
     return map[statusId] || 'info'

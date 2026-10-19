@@ -17,6 +17,7 @@ export interface CategoryOptionVO {
 export interface StatusOptionVO {
   value: number
   label: string
+  code: string | null
   isTerminal: boolean | null
   sortOrder: number | null
 }

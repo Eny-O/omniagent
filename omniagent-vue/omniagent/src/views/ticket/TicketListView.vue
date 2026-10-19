@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { TicketPageVO, TicketForm, TicketUpdateDTO } from '@/types/ticket'
 import {
@@ -9,7 +10,21 @@ import {
   updateTicket,
 } from '@/api/ticket'
 import { useDictStore } from '@/stores/dict'
+import { useUserStore } from '@/stores/user'
 import TicketFormDialog from './TicketFormDialog.vue'
+
+const router = useRouter()
+const userStore = useUserStore()
+
+// 前端权限闸门（真实鉴权在后端；调试期 currentRole 为 null 时按"放行"处理）
+const isReporter = computed(() => userStore.currentRole === 'REPORTER')
+const isAdmin = computed(() => userStore.currentRole === 'ADMIN')
+const isTerminal = (row: TicketPageVO) =>
+  dictStore.statuses.find((s) => s.value === row.statusId)?.isTerminal === true
+// 编辑：非终态 +（管理员 或 非报障人角色）；报障人的"编辑自己未处理工单"走详情页按需放开
+const canEdit = (row: TicketPageVO) => !isTerminal(row) && (isAdmin.value || !isReporter.value)
+// 删除：仅管理员
+const canDelete = () => isAdmin.value
 
 // 字典下拉选项与标签/标签色由 dict store 动态提供
 const dictStore = useDictStore()
@@ -105,6 +120,11 @@ const handleEdit = (row: TicketPageVO) => {
     expectedResolveAt: null,
   } as TicketForm
   dialogVisible.value = true
+}
+
+// 详情
+const goDetail = (row: TicketPageVO) => {
+  router.push(`/tickets/${row.id}`)
 }
 
 // 删除
@@ -227,7 +247,11 @@ onMounted(async () => {
 
       <el-table v-loading="loading" :data="tableData" border style="width: 100%">
         <el-table-column prop="ticketNo" label="工单编号" width="160" />
-        <el-table-column prop="title" label="标题" min-width="200" show-overflow-tooltip />
+        <el-table-column label="标题" min-width="200" show-overflow-tooltip>
+          <template #default="{ row }">
+            <el-link type="primary" @click="goDetail(row)">{{ row.title }}</el-link>
+          </template>
+        </el-table-column>
         <el-table-column label="分类" width="100">
           <template #default="{ row }">
             {{ dictStore.getCategoryLabel(row.categoryId) }}
@@ -252,10 +276,11 @@ onMounted(async () => {
         </el-table-column>
         <el-table-column prop="source" label="来源" width="80" />
         <el-table-column prop="createdAt" label="创建时间" width="160" />
-        <el-table-column label="操作" width="150" fixed="right">
+        <el-table-column label="操作" width="220" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="handleEdit(row)">编辑</el-button>
-            <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
+            <el-button link type="primary" @click="goDetail(row)">详情</el-button>
+            <el-button v-if="canEdit(row)" link type="primary" @click="handleEdit(row)">编辑</el-button>
+            <el-button v-if="canDelete()" link type="danger" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
