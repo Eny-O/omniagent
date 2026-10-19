@@ -14,7 +14,8 @@ public enum TicketStatusEnum {
     PENDING("PENDING", "待处理", 2),
     PROCESSING("PROCESSING", "处理中", 3),
     RESOLVED("RESOLVED", "已解决", 4),
-    CLOSED("CLOSED", "已关闭", 5);
+    CLOSED("CLOSED", "已关闭", 5),
+    CANCELLED("CANCELLED", "已取消", 6);
 
     private final String code;
     private final String name;
@@ -48,14 +49,16 @@ public enum TicketStatusEnum {
         }
         switch (this) {
             case DRAFT:
-                return target == PENDING || target == PROCESSING || target == RESOLVED || target == CLOSED;
+                return target == PENDING || target == PROCESSING || target == RESOLVED || target == CLOSED || target == CANCELLED;
             case PENDING:
-                return target == PROCESSING || target == RESOLVED || target == CLOSED;
+                return target == PROCESSING || target == RESOLVED || target == CLOSED || target == CANCELLED;
             case PROCESSING:
                 return target == RESOLVED || target == CLOSED;
             case RESOLVED:
                 return target == CLOSED;
             case CLOSED:
+                return false;
+            case CANCELLED:
                 return false;
             default:
                 return false;
@@ -66,6 +69,6 @@ public enum TicketStatusEnum {
      * 是否终态
      */
     public boolean isTerminal() {
-        return this == CLOSED;
+        return this == CLOSED || this == CANCELLED;
     }
 }

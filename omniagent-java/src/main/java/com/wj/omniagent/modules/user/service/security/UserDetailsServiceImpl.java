@@ -49,6 +49,7 @@ public class UserDetailsServiceImpl implements UserDetailsService {
                 user.getPasswordHash(),
                 user.getStatus(),
                 role,
+                user.getDeptId(),
                 Collections.singletonList(new SimpleGrantedAuthority("ROLE_" + role)),
                 isEnabled(user)
         );

@@ -3,14 +3,19 @@ package com.wj.omniagent.modules.ticket.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.wj.omniagent.common.context.ActingContext;
 import com.wj.omniagent.common.enums.ErrorCodeEnum;
 import com.wj.omniagent.common.pojo.result.PageResult;
+import com.wj.omniagent.common.utils.SecurityUtils;
 
 import com.wj.omniagent.exception.BusinessException;
 import com.wj.omniagent.modules.ticket.mapper.TicketCategoryMapper;
 import com.wj.omniagent.modules.ticket.mapper.TicketMapper;
 import com.wj.omniagent.modules.ticket.mapper.TicketPriorityMapper;
 import com.wj.omniagent.modules.ticket.mapper.TicketSourceMapper;
+import com.wj.omniagent.modules.user.mapper.UserMapper;
+import com.wj.omniagent.modules.user.pojo.dos.Users;
+import com.wj.omniagent.modules.user.service.security.LoginUserPrincipal;
 import com.wj.omniagent.modules.ticket.pojo.dos.TicketCategories;
 import com.wj.omniagent.modules.ticket.pojo.dos.TicketPriorities;
 import com.wj.omniagent.modules.ticket.pojo.dos.TicketSources;
@@ -19,6 +24,7 @@ import com.wj.omniagent.modules.ticket.pojo.dto.TicketCreateDTO;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketQuery;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketUpdateDTO;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketUpdateStatusDTO;
+import com.wj.omniagent.modules.ticket.pojo.enums.DataScope;
 import com.wj.omniagent.modules.ticket.pojo.enums.TicketStatusEnum;
 import com.wj.omniagent.modules.ticket.pojo.vo.TicketPageVO;
 import com.wj.omniagent.modules.ticket.pojo.vo.TicketVO;
@@ -29,6 +35,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
+import org.springframework.security.core.Authentication;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
@@ -51,6 +58,8 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
     private final TicketPriorityMapper ticketPriorityMapper;
 
     private final TicketSourceMapper ticketSourceMapper;
+
+    private final UserMapper userMapper;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -103,6 +112,7 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
         if (ticket == null) {
             throw new BusinessException(ErrorCodeEnum.TICKET_NOT_FOUND);
         }
+        assertViewable(ticket);
         return convertToVO(ticket);
     }
 
@@ -131,6 +141,10 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
         if (query.getCategoryId() != null) {
             wrapper.eq(Tickets::getCategoryId, query.getCategoryId());
         }
+
+        // 数据范围过滤：按当前角色限制可见工单（P1 第3批）
+        applyDataScope(wrapper);
+
         wrapper.orderByDesc(Tickets::getCreatedAt);
 
         Page<Tickets> ticketsPage = ticketMapper.selectPage(page, wrapper);
@@ -160,6 +174,9 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
         if (currentStatus.isTerminal()) {
             throw new BusinessException(ErrorCodeEnum.TICKET_CLOSED_NOT_UPDATE);
         }
+
+        // 角色 + 归属 + 状态校验：报障人仅未处理前可改自己的；处理人/主管需归属本部门或本人；管理员放行
+        assertEditable(ticket, currentStatus);
 
         // 仅更新非空字段，避免把已有值覆盖成 null
         applyUpdateFields(ticket, dto);
@@ -192,6 +209,9 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
             return;
         }
 
+        // 角色 + 归属校验：仅处理人 / 主管 / 管理员可推进状态
+        assertCanProcess(ticket);
+
         if (!currentStatus.canTransitionTo(targetStatus)) {
             throw new BusinessException(ErrorCodeEnum.TICKET_STATUS_INVALID_TRANSITION,
                     String.format("工单状态状态流转不合法：%s -> %s", currentStatus.getName(), targetStatus.getName())
@@ -223,6 +243,8 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
         if (ticket == null) {
             throw new BusinessException(ErrorCodeEnum.TICKET_NOT_FOUND);
         }
+        // 仅管理员可硬删除工单；调试期（未鉴权）放行
+        assertCanDelete();
         ticketMapper.deleteById(id);
     }
 
@@ -330,5 +352,176 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
         TicketVO vo = new TicketVO();
         BeanUtils.copyProperties(ticket, vo);
         return vo;
+    }
+
+    // ==================== 角色权限 ====================
+
+    /**
+     * 解析当前用户的数据范围。
+     * 调试期或未鉴权（role 为空）按 ALL 宽松处理；正式启用鉴权后应改为"空角色即无权"。
+     */
+    private DataScope resolveDataScope() {
+        String role = SecurityUtils.getCurrentRole();
+        if (role == null) {
+            return DataScope.ALL;
+        }
+        return switch (role) {
+            case "REPORTER" -> DataScope.SELF;
+            case "HANDLER" -> DataScope.ASSIGNED;
+            case "SUPERVISOR" -> DataScope.DEPARTMENT;
+            case "ADMIN" -> DataScope.ALL;
+            default -> DataScope.ALL;
+        };
+    }
+
+    /**
+     * 当前用户部门ID：Session 从 Principal 取；机器身份（Agent）按 ActingContext.userId 查用户表。
+     */
+    private Long resolveCurrentDeptId() {
+        Authentication authentication = SecurityUtils.getCurrentAuthentication();
+        if (SecurityUtils.isAuthenticated() && authentication.getPrincipal() instanceof LoginUserPrincipal principal) {
+            return principal.getDeptId();
+        }
+        Long actingUid = ActingContext.getUserId();
+        if (actingUid != null) {
+            Users u = userMapper.selectById(actingUid);
+            if (u != null) {
+                return u.getDeptId();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 列表 / 查询的数据范围过滤。
+     */
+    private void applyDataScope(LambdaQueryWrapper<Tickets> wrapper) {
+        DataScope scope = resolveDataScope();
+        Long uid = SecurityUtils.getCurrentUserId();
+        switch (scope) {
+            case SELF -> {
+                if (uid != null) {
+                    wrapper.eq(Tickets::getCreatorId, uid);
+                }
+            }
+            case ASSIGNED -> {
+                if (uid != null) {
+                    wrapper.and(w -> w.eq(Tickets::getCreatorId, uid).or().eq(Tickets::getCurrentAssigneeId, uid));
+                }
+            }
+            case DEPARTMENT -> {
+                Long deptId = resolveCurrentDeptId();
+                if (deptId != null) {
+                    wrapper.eq(Tickets::getDeptId, deptId);
+                }
+            }
+            case ALL -> { /* 不过滤 */ }
+        }
+    }
+
+    /**
+     * 查看权限：依据 DataScope 判断当前用户能否查看该工单。
+     */
+    private void assertViewable(Tickets ticket) {
+        String role = SecurityUtils.getCurrentRole();
+        if (role == null) {
+            return; // 调试期宽松
+        }
+        DataScope scope = resolveDataScope();
+        Long uid = SecurityUtils.getCurrentUserId();
+        Long deptId = resolveCurrentDeptId();
+        boolean allowed = switch (scope) {
+            case SELF -> uid != null && ticket.getCreatorId() != null && ticket.getCreatorId().equals(uid);
+            case ASSIGNED -> uid != null && ((ticket.getCreatorId() != null && ticket.getCreatorId().equals(uid))
+                    || (ticket.getCurrentAssigneeId() != null && ticket.getCurrentAssigneeId().equals(uid)));
+            case DEPARTMENT -> deptId != null && ticket.getDeptId() != null && ticket.getDeptId().equals(deptId);
+            case ALL -> true;
+        };
+        if (!allowed) {
+            throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION);
+        }
+    }
+
+    /**
+     * 修改提交内容权限：
+     *  - ADMIN 放行；
+     *  - REPORTER 仅未处理前（DRAFT/PENDING）且是本人创建的；
+     *  - HANDLER 需是本人创建或分配给本人的；
+     *  - SUPERVISOR 需本部门。
+     */
+    private void assertEditable(Tickets ticket, TicketStatusEnum status) {
+        String role = SecurityUtils.getCurrentRole();
+        if (role == null) {
+            return; // 调试期宽松
+        }
+        Long uid = SecurityUtils.getCurrentUserId();
+        Long deptId = resolveCurrentDeptId();
+        switch (role) {
+            case "ADMIN" -> { /* 放行 */ }
+            case "REPORTER" -> {
+                if (status != TicketStatusEnum.DRAFT && status != TicketStatusEnum.PENDING) {
+                    throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "已处理的工单不允许报障人修改");
+                }
+                if (uid == null || ticket.getCreatorId() == null || !ticket.getCreatorId().equals(uid)) {
+                    throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "仅能修改本人创建的工单");
+                }
+            }
+            case "HANDLER" -> {
+                if (!isOwnerOrAssignee(ticket, uid)) {
+                    throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "仅能修改本人创建或分配的工单");
+                }
+            }
+            case "SUPERVISOR" -> {
+                if (deptId == null || ticket.getDeptId() == null || !deptId.equals(ticket.getDeptId())) {
+                    throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "仅能修改本部门工单");
+                }
+            }
+            default -> throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION);
+        }
+    }
+
+    /**
+     * 推进状态权限：仅 HANDLER / SUPERVISOR / ADMIN，且需归属本部门或本人。
+     */
+    private void assertCanProcess(Tickets ticket) {
+        String role = SecurityUtils.getCurrentRole();
+        if (role == null) {
+            return; // 调试期宽松
+        }
+        if (!"HANDLER".equals(role) && !"SUPERVISOR".equals(role) && !"ADMIN".equals(role)) {
+            throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "报障人无权限推进工单状态");
+        }
+        Long uid = SecurityUtils.getCurrentUserId();
+        Long deptId = resolveCurrentDeptId();
+        if ("HANDLER".equals(role)) {
+            if (!isOwnerOrAssignee(ticket, uid)) {
+                throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "仅能处理本人创建或分配的工单");
+            }
+        } else if ("SUPERVISOR".equals(role)) {
+            if (deptId == null || ticket.getDeptId() == null || !deptId.equals(ticket.getDeptId())) {
+                throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "仅能处理本部门工单");
+            }
+        }
+    }
+
+    /**
+     * 删除权限：仅 ADMIN；调试期放行。
+     */
+    private void assertCanDelete() {
+        String role = SecurityUtils.getCurrentRole();
+        if (role == null) {
+            return; // 调试期宽松
+        }
+        if (!"ADMIN".equals(role)) {
+            throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "仅管理员可删除工单");
+        }
+    }
+
+    private boolean isOwnerOrAssignee(Tickets ticket, Long uid) {
+        if (uid == null) {
+            return false;
+        }
+        return (ticket.getCreatorId() != null && ticket.getCreatorId().equals(uid))
+                || (ticket.getCurrentAssigneeId() != null && ticket.getCurrentAssigneeId().equals(uid));
     }
 }
