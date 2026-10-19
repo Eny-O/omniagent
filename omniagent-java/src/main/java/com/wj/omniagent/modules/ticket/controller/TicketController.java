@@ -76,6 +76,14 @@ public class TicketController {
         return ResponseResult.success();
     }
 
+    @Operation(summary = "撤回工单（报障人未处理前）")
+    @PostMapping("/{id}/withdraw")
+    public ResponseResult<TicketVO> withdraw(
+            @Parameter(description = "工单ID") @PathVariable Long id) {
+        ticketService.withdrawTicket(id, getCurrentUserId());
+        return ResponseResult.success(ticketService.getTicketById(id));
+    }
+
     /**
      * 获取当前用户ID
      */

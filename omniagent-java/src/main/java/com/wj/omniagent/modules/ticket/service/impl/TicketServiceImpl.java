@@ -248,6 +248,23 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
         ticketMapper.deleteById(id);
     }
 
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void withdrawTicket(Long id, Long operatorId) {
+        Assert.notNull(id, "工单ID不能为空");
+        Tickets ticket = ticketMapper.selectById(id);
+        if (ticket == null) {
+            throw new BusinessException(ErrorCodeEnum.TICKET_NOT_FOUND);
+        }
+        TicketStatusEnum currentStatus = getStatusBySortOrder(ticket.getStatusId());
+        // 仅报障人未处理前 / 管理员可撤回；调试期（未鉴权）放行
+        assertCanWithdraw(ticket, currentStatus);
+        ticket.setStatusId(TicketStatusEnum.CANCELLED.getSortOrder());
+        ticket.setUpdatedAt(LocalDateTime.now());
+        ticketMapper.updateById(ticket);
+        // TODO: 记录 ticket_history（REPORTER 撤回，第6批补充审计）
+    }
+
     private void applyUpdateFields(Tickets ticket, TicketUpdateDTO dto) {
         if (StringUtils.hasText(dto.getTitle())) {
             ticket.setTitle(dto.getTitle().trim());
@@ -514,6 +531,29 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
         }
         if (!"ADMIN".equals(role)) {
             throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "仅管理员可删除工单");
+        }
+    }
+
+    /**
+     * 撤回权限：仅 REPORTER 本人在未处理前（DRAFT/PENDING）可撤回；ADMIN 放行；调试期放行。
+     */
+    private void assertCanWithdraw(Tickets ticket, TicketStatusEnum status) {
+        String role = SecurityUtils.getCurrentRole();
+        if (role == null) {
+            return; // 调试期宽松
+        }
+        Long uid = SecurityUtils.getCurrentUserId();
+        switch (role) {
+            case "ADMIN" -> { /* 放行 */ }
+            case "REPORTER" -> {
+                if (status != TicketStatusEnum.DRAFT && status != TicketStatusEnum.PENDING) {
+                    throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "已处理的工单不允许撤回");
+                }
+                if (uid == null || ticket.getCreatorId() == null || !ticket.getCreatorId().equals(uid)) {
+                    throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "仅能撤回本人创建的工单");
+                }
+            }
+            default -> throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "仅报障人/管理员可撤回工单");
         }
     }
 

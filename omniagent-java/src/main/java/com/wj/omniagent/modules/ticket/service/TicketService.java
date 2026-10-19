@@ -45,5 +45,10 @@ public interface TicketService extends IService<Tickets> {
      * 删除工单
      */
     void deleteTicket(Long id);
+
+    /**
+     * 撤回工单（报障人未处理前 / 管理员）
+     */
+    void withdrawTicket(Long id, Long operatorId);
 }
 

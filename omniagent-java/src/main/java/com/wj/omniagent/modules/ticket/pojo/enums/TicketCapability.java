@@ -9,6 +9,7 @@ public enum TicketCapability {
     CREATE,        // 创建工单
     VIEW,          // 查看工单（受 DataScope 约束）
     EDIT_CONTENT,  // 修改提交内容（未处理前的报障人）
+    WITHDRAW,      // 撤回工单（未处理前的报障人）
     PROCESS,       // 处理内容 / 推进状态
     ASSIGN,        // 派单（SUPERVISOR）
     DELETE,        // 硬删除（ADMIN）
