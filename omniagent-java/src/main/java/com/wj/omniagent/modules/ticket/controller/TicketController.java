@@ -8,6 +8,7 @@ import com.wj.omniagent.modules.ticket.pojo.dto.TicketQuery;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketUpdateDTO;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketUpdateStatusDTO;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketAssignDTO;
+import com.wj.omniagent.modules.ticket.pojo.dos.TicketHistory;
 import com.wj.omniagent.modules.ticket.pojo.vo.TicketPageVO;
 import com.wj.omniagent.modules.ticket.pojo.vo.TicketVO;
 import com.wj.omniagent.modules.ticket.service.TicketService;
@@ -18,6 +19,8 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 /**
  * 工单管理 Controller
@@ -43,6 +46,13 @@ public class TicketController {
     public ResponseResult<TicketVO> getById(
             @Parameter(description = "工单ID") @PathVariable Long id) {
         return ResponseResult.success(ticketService.getTicketById(id));
+    }
+
+    @Operation(summary = "查询工单操作历史（审计轨迹）")
+    @GetMapping("/{id}/history")
+    public ResponseResult<List<TicketHistory>> getHistory(
+            @Parameter(description = "工单ID") @PathVariable Long id) {
+        return ResponseResult.success(ticketService.getTicketHistory(id));
     }
 
     @Operation(summary = "分页查询工单列表")

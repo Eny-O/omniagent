@@ -49,6 +49,7 @@ import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.Arrays;
+import java.util.List;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -126,6 +127,20 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
         }
         assertViewable(ticket);
         return convertToVO(ticket);
+    }
+
+    @Override
+    public List<TicketHistory> getTicketHistory(Long ticketId) {
+        Assert.notNull(ticketId, "工单ID不能为空");
+        Tickets ticket = ticketMapper.selectById(ticketId);
+        if (ticket == null) {
+            throw new BusinessException(ErrorCodeEnum.TICKET_NOT_FOUND);
+        }
+        // 复用数据范围鉴权：只有能查看该工单的人才能查看其审计历史
+        assertViewable(ticket);
+        LambdaQueryWrapper<TicketHistory> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(TicketHistory::getTicketId, ticketId).orderByAsc(TicketHistory::getCreatedAt);
+        return ticketHistoryMapper.selectList(wrapper);
     }
 
     @Override
