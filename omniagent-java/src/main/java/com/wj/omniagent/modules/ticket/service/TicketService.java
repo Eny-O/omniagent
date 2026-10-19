@@ -5,11 +5,13 @@ import com.baomidou.mybatisplus.extension.service.IService;
 import com.wj.omniagent.common.pojo.result.PageResult;
 import com.wj.omniagent.modules.ticket.pojo.dos.Tickets;
 import com.wj.omniagent.modules.ticket.pojo.dos.TicketHistory;
+import com.wj.omniagent.modules.ticket.pojo.dos.TicketComments;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketCreateDTO;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketQuery;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketUpdateDTO;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketUpdateStatusDTO;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketAssignDTO;
+import com.wj.omniagent.modules.ticket.pojo.dto.TicketCommentCreateDTO;
 import com.wj.omniagent.modules.ticket.pojo.vo.TicketPageVO;
 import com.wj.omniagent.modules.ticket.pojo.vo.TicketVO;
 
@@ -65,5 +67,17 @@ public interface TicketService extends IService<Tickets> {
      * 仅拥有该工单查看权限（DataScope）的用户可见。
      */
     List<TicketHistory> getTicketHistory(Long ticketId);
+
+    /**
+     * 添加工单评论 / 备注（承载处理内容、沟通记录、内部备注）。
+     * 仅处理人/主管/管理员可评论（报障人不可评论）；调试期(null 角色)宽松放行。
+     */
+    TicketComments addComment(Long ticketId, TicketCommentCreateDTO dto, Long operatorId);
+
+    /**
+     * 查询工单评论列表，按时间升序返回。
+     * 报障人仅可见非内部备注；处理人/主管/管理员/调试期可见全部。
+     */
+    List<TicketComments> listComments(Long ticketId);
 }
 

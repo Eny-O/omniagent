@@ -8,7 +8,9 @@ import com.wj.omniagent.modules.ticket.pojo.dto.TicketQuery;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketUpdateDTO;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketUpdateStatusDTO;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketAssignDTO;
+import com.wj.omniagent.modules.ticket.pojo.dto.TicketCommentCreateDTO;
 import com.wj.omniagent.modules.ticket.pojo.dos.TicketHistory;
+import com.wj.omniagent.modules.ticket.pojo.dos.TicketComments;
 import com.wj.omniagent.modules.ticket.pojo.vo.TicketPageVO;
 import com.wj.omniagent.modules.ticket.pojo.vo.TicketVO;
 import com.wj.omniagent.modules.ticket.service.TicketService;
@@ -53,6 +55,21 @@ public class TicketController {
     public ResponseResult<List<TicketHistory>> getHistory(
             @Parameter(description = "工单ID") @PathVariable Long id) {
         return ResponseResult.success(ticketService.getTicketHistory(id));
+    }
+
+    @Operation(summary = "添加工单评论 / 备注")
+    @PostMapping("/{id}/comments")
+    public ResponseResult<TicketComments> addComment(
+            @Parameter(description = "工单ID") @PathVariable Long id,
+            @RequestBody @Valid TicketCommentCreateDTO dto) {
+        return ResponseResult.success(ticketService.addComment(id, dto, getCurrentUserId()));
+    }
+
+    @Operation(summary = "查询工单评论列表")
+    @GetMapping("/{id}/comments")
+    public ResponseResult<List<TicketComments>> listComments(
+            @Parameter(description = "工单ID") @PathVariable Long id) {
+        return ResponseResult.success(ticketService.listComments(id));
     }
 
     @Operation(summary = "分页查询工单列表")

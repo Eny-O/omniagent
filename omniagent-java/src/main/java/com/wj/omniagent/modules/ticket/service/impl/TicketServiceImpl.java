@@ -16,6 +16,7 @@ import com.wj.omniagent.modules.ticket.mapper.TicketPriorityMapper;
 import com.wj.omniagent.modules.ticket.mapper.TicketSourceMapper;
 import com.wj.omniagent.modules.ticket.mapper.TicketAssignmentsMapper;
 import com.wj.omniagent.modules.ticket.mapper.TicketHistoryMapper;
+import com.wj.omniagent.modules.ticket.mapper.TicketCommentsMapper;
 import com.wj.omniagent.modules.user.mapper.UserMapper;
 import com.wj.omniagent.modules.user.pojo.dos.Users;
 import com.wj.omniagent.modules.user.service.security.LoginUserPrincipal;
@@ -25,11 +26,13 @@ import com.wj.omniagent.modules.ticket.pojo.dos.TicketSources;
 import com.wj.omniagent.modules.ticket.pojo.dos.Tickets;
 import com.wj.omniagent.modules.ticket.pojo.dos.TicketAssignments;
 import com.wj.omniagent.modules.ticket.pojo.dos.TicketHistory;
+import com.wj.omniagent.modules.ticket.pojo.dos.TicketComments;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketCreateDTO;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketQuery;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketUpdateDTO;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketUpdateStatusDTO;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketAssignDTO;
+import com.wj.omniagent.modules.ticket.pojo.dto.TicketCommentCreateDTO;
 import com.wj.omniagent.modules.ticket.pojo.enums.DataScope;
 import com.wj.omniagent.modules.ticket.pojo.enums.TicketStatusEnum;
 import com.wj.omniagent.modules.ticket.pojo.enums.TicketActionEnum;
@@ -71,6 +74,7 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
 
     private final TicketAssignmentsMapper ticketAssignmentMapper;
     private final TicketHistoryMapper ticketHistoryMapper;
+    private final TicketCommentsMapper ticketCommentMapper;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -141,6 +145,59 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
         LambdaQueryWrapper<TicketHistory> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(TicketHistory::getTicketId, ticketId).orderByAsc(TicketHistory::getCreatedAt);
         return ticketHistoryMapper.selectList(wrapper);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public TicketComments addComment(Long ticketId, TicketCommentCreateDTO dto, Long operatorId) {
+        Assert.notNull(ticketId, "工单ID不能为空");
+        Assert.notNull(dto, "评论内容不能为空");
+        Tickets ticket = ticketMapper.selectById(ticketId);
+        if (ticket == null) {
+            throw new BusinessException(ErrorCodeEnum.TICKET_NOT_FOUND);
+        }
+        // 复用数据范围鉴权：只有能查看该工单的人才能评论
+        assertViewable(ticket);
+        String role = SecurityUtils.getCurrentRole();
+        // 仅处理人/主管/管理员可评论；报障人不可评论（调试期 null 角色宽松放行）
+        if (role != null && "REPORTER".equals(role)) {
+            throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "仅处理人/主管/管理员可评论");
+        }
+        // 终态工单（已关闭/已取消）不可再评论，与 updateTicket 对已关闭工单的限制保持一致
+        if (getStatusBySortOrder(ticket.getStatusId()).isTerminal()) {
+            throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "已关闭/已取消的工单不可再评论");
+        }
+        boolean internal = Boolean.TRUE.equals(dto.getIsInternal());
+        TicketComments comment = new TicketComments();
+        comment.setTicketId(ticketId);
+        comment.setAuthorId(operatorId);
+        // 能走到这里的只能是处理角色或调试身份，作者类型统一记为 OPERATOR
+        comment.setAuthorType("OPERATOR");
+        comment.setContent(dto.getContent().trim());
+        comment.setIsInternal(internal);
+        comment.setCreatedAt(LocalDateTime.now());
+        ticketCommentMapper.insert(comment);
+        return comment;
+    }
+
+    @Override
+    public List<TicketComments> listComments(Long ticketId) {
+        Assert.notNull(ticketId, "工单ID不能为空");
+        Tickets ticket = ticketMapper.selectById(ticketId);
+        if (ticket == null) {
+            throw new BusinessException(ErrorCodeEnum.TICKET_NOT_FOUND);
+        }
+        // 复用数据范围鉴权：只有能查看该工单的人才能查看其评论
+        assertViewable(ticket);
+        LambdaQueryWrapper<TicketComments> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(TicketComments::getTicketId, ticketId);
+        // 报障人仅可见非内部备注；处理人/主管/管理员/调试期(null)可见全部
+        String role = SecurityUtils.getCurrentRole();
+        if ("REPORTER".equals(role)) {
+            wrapper.eq(TicketComments::getIsInternal, false);
+        }
+        wrapper.orderByAsc(TicketComments::getCreatedAt);
+        return ticketCommentMapper.selectList(wrapper);
     }
 
     @Override
