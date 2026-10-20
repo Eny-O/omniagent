@@ -32,9 +32,6 @@ public class TicketUpdateDTO {
     @Schema(description = "受理部门ID（报障人未处理前可在编辑时修改归属部门）", example = "1")
     private Long deptId;
 
-    @Schema(description = "当前处理人ID", example = "2")
-    private Long currentAssigneeId;
-
     @Pattern(regexp = "^1[3-9]\\d{9}$", message = "联系人电话格式不正确")
     @Schema(description = "联系人电话", example = "13800000001")
     private String contactPhone;

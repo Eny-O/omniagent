@@ -510,9 +510,6 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
             departmentService.getDepartmentById(dto.getDeptId());
             ticket.setDeptId(dto.getDeptId());
         }
-        if (dto.getCurrentAssigneeId() != null) {
-            ticket.setCurrentAssigneeId(dto.getCurrentAssigneeId());
-        }
         if (StringUtils.hasText(dto.getContactPhone())) {
             ticket.setContactPhone(dto.getContactPhone().trim());
         } else if (dto.getContactPhone() != null) {

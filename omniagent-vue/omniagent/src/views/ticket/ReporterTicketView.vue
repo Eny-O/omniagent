@@ -85,7 +85,6 @@ const handleEdit = (row: TicketPageVO) => {
     description: '',
     categoryId: row.categoryId,
     priorityId: row.priorityId,
-    currentAssigneeId: row.currentAssigneeId,
     source: row.source,
     contactPhone: '',
     contactEmail: '',

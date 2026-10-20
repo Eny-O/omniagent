@@ -29,9 +29,6 @@ public class TicketCreateDTO {
     @Schema(description = "工单优先级ID", example = "1")
     private Integer priorityId;
 
-    @Schema(description = "当前处理人ID", example = "2")
-    private Long currentAssigneeId;
-
     @Schema(description = "工单来源", example = "WEB")
     private String source;
 

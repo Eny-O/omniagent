@@ -68,7 +68,6 @@ const formData = ref<TicketForm>({
   description: '',
   categoryId: null,
   priorityId: null,
-  currentAssigneeId: null,
   source: 'WEB',
   deptId: null,
   contactPhone: '',
@@ -134,7 +133,6 @@ watch(
           description: '',
           categoryId: null,
           priorityId: null,
-          currentAssigneeId: null,
           source: 'WEB',
           deptId: userStore.user?.deptId ?? null,
           contactPhone: '',
@@ -246,16 +244,6 @@ const handleSubmit = async () => {
             </el-select>
           </el-form-item>
         </el-col>
-        <el-col v-if="!reporterMode" :span="12">
-          <el-form-item label="处理人">
-            <el-input-number
-              v-model="formData.currentAssigneeId"
-              :min="1"
-              placeholder="用户ID"
-              style="width: 100%"
-            />
-          </el-form-item>
-        </el-col>
       </el-row>
 
       <el-row :gutter="16">
@@ -292,9 +280,3 @@ const handleSubmit = async () => {
     </template>
   </el-dialog>
 </template>
-
-<style scoped>
-:deep(.el-input-number .el-input__inner) {
-  text-align: left;
-}
-</style>
