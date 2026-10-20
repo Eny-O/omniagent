@@ -396,10 +396,11 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
         assignment.setIsCurrent(true);
         ticketAssignmentMapper.insert(assignment);
 
-        // 更新工单：写入当前处理人 + 进入处理中（DRAFT/PENDING 才流转，已 PROCESSING 则保持）
+        // 更新工单：写入当前处理人 + 进入待处理(PENDING)；DRAFT/PENDING 派发后均置 PENDING，
+        // 已 PROCESSING 及以上则保持（由被指派 HANDLER 在详情页"接受处理"推进到 PROCESSING）
         ticket.setCurrentAssigneeId(dto.getAssigneeId());
         if (currentStatus == TicketStatusEnum.DRAFT || currentStatus == TicketStatusEnum.PENDING) {
-            ticket.setStatusId(TicketStatusEnum.PROCESSING.getSortOrder());
+            ticket.setStatusId(TicketStatusEnum.PENDING.getSortOrder());
         }
         ticket.setUpdatedAt(LocalDateTime.now());
         ticketMapper.updateById(ticket);
@@ -746,8 +747,9 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
         switch (role) {
             case "ADMIN" -> { /* 放行 */ }
             case "REPORTER" -> {
-                if (status != TicketStatusEnum.DRAFT && status != TicketStatusEnum.PENDING) {
-                    throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "已处理的工单不允许撤回");
+                // 仅草稿(DRAFT)状态的工单允许报障人撤回；派发后(PENDING 起)不可撤销
+                if (status != TicketStatusEnum.DRAFT) {
+                    throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "仅草稿状态的工单可撤回");
                 }
                 if (uid == null || ticket.getCreatorId() == null || !ticket.getCreatorId().equals(uid)) {
                     throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "仅能撤回本人创建的工单");

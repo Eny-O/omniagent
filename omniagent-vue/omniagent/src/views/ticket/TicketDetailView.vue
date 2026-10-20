@@ -55,7 +55,7 @@ const canWithdraw = computed(
     currentRole.value === null ||
     ((isReporter.value &&
       !isTerminal.value &&
-      (ticket.value?.statusId === 1 || ticket.value?.statusId === 2)) ||
+      ticket.value?.statusId === 1) ||
       currentRole.value === 'ADMIN'),
 )
 const canAssign = computed(
@@ -76,6 +76,15 @@ const nextStatus = computed(() => {
 })
 const nextStatusCode = computed(() => nextStatus.value?.code ?? null)
 const nextStatusLabel = computed(() => nextStatus.value?.label ?? '')
+
+// 正向推进按钮可见闸门：DRAFT 态不允许正向推进——草稿只能由 SUPERVISOR/ADMIN 通过“派单”进入 PENDING，
+// 若直接“推进至 待处理”会得到 status=PENDING 但 assignee 为空，导致被指派 HANDLER 看不到，流程断链。
+const canAdvance = computed(
+  () =>
+    canProcess.value &&
+    !!nextStatusCode.value &&
+    currentStatus.value?.code !== 'DRAFT',
+)
 
 const activeTab = ref('overview')
 
@@ -266,11 +275,11 @@ onMounted(async () => {
     <!-- 操作栏（按角色/状态显隐；真实鉴权在后端） -->
     <div v-if="ticket" class="action-bar">
       <el-button
-        v-if="canProcess && nextStatusCode"
+        v-if="canAdvance"
         type="primary"
         @click="handleAdvance"
       >
-        推进至 {{ nextStatusLabel }}
+        {{ nextStatusCode === 'PROCESSING' ? '接受处理' : '推进至 ' + nextStatusLabel }}
       </el-button>
       <el-button v-if="canWithdraw" type="warning" @click="handleWithdraw">
         撤回工单
