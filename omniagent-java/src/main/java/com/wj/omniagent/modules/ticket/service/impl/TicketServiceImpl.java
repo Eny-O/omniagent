@@ -18,6 +18,7 @@ import com.wj.omniagent.modules.ticket.mapper.TicketAssignmentsMapper;
 import com.wj.omniagent.modules.ticket.mapper.TicketHistoryMapper;
 import com.wj.omniagent.modules.ticket.mapper.TicketCommentsMapper;
 import com.wj.omniagent.modules.user.mapper.UserMapper;
+import com.wj.omniagent.modules.user.service.DepartmentService;
 import com.wj.omniagent.modules.user.pojo.dos.Users;
 import com.wj.omniagent.modules.user.service.security.LoginUserPrincipal;
 import com.wj.omniagent.modules.ticket.pojo.dos.TicketCategories;
@@ -75,6 +76,7 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
     private final TicketAssignmentsMapper ticketAssignmentMapper;
     private final TicketHistoryMapper ticketHistoryMapper;
     private final TicketCommentsMapper ticketCommentMapper;
+    private final DepartmentService departmentService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -97,9 +99,21 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
         }
         ticket.setStatusId(TicketStatusEnum.DRAFT.getSortOrder());
         ticket.setCreatorId(operatorId);
-        // 写入创建人所在部门：保证 SUPERVISOR 按部门(DEPARTMENT 数据范围)能看到并派发该工单。
-        // 不依赖前端传 deptId，既补全数据又防止报障人伪造部门。
-        ticket.setDeptId(resolveCurrentDeptId());
+        // 工单部门归属（受理部门）：优先采用前端显式指定的部门（需校验存在），未指定则回退创建人所在部门。
+        // 这样既支持“跨部门故障选对受理部门”，又保留“默认自身部门”的零摩擦体验；
+        // 若两者皆为空（创建人无部门且未指定），则拒绝创建，杜绝 dept_id=null 的孤儿工单。
+        Long requestedDept = dto.getDeptId();
+        Long deptId;
+        if (requestedDept != null) {
+            departmentService.getDepartmentById(requestedDept); // 校验部门存在，不存在抛 DEPT_NOT_FOUND
+            deptId = requestedDept;
+        } else {
+            deptId = resolveCurrentDeptId();
+        }
+        if (deptId == null) {
+            throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "无法判定工单所属部门，请指定受理部门");
+        }
+        ticket.setDeptId(deptId);
         ticket.setSource(effectiveSource);
         ticket.setCreatedAt(LocalDateTime.now());
         ticket.setUpdatedAt(LocalDateTime.now());
@@ -408,6 +422,56 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
         recordHistory(ticket.getId(), operatorId, TicketActionEnum.ASSIGN, "current_assignee_id",
                 oldAssigneeId == null ? null : oldAssigneeId.toString(),
                 dto.getAssigneeId().toString(), dto.getRemark());
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void transferDepartment(Long ticketId, Long newDeptId, Long operatorId) {
+        Assert.notNull(ticketId, "工单ID不能为空");
+        Assert.notNull(newDeptId, "目标部门ID不能为空");
+
+        Tickets ticket = ticketMapper.selectById(ticketId);
+        if (ticket == null) {
+            throw new BusinessException(ErrorCodeEnum.TICKET_NOT_FOUND);
+        }
+
+        // 终态工单不可再转部门，与派单限制保持一致（已关闭/已取消的工单冻结）
+        TicketStatusEnum currentStatus = getStatusBySortOrder(ticket.getStatusId());
+        if (currentStatus.isTerminal()) {
+            throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "已关闭/已取消的工单不可转部门");
+        }
+
+        // 权限：SUPERVISOR（本部门）/ ADMIN 可转部门
+        assertCanTransfer(ticket);
+
+        // 目标部门必须存在（不存在抛 DEPT_NOT_FOUND），复用已有部门校验，避免写入孤儿部门ID
+        departmentService.getDepartmentById(newDeptId);
+
+        // 幂等：部门未变化直接返回，避免产生无意义的审计噪声
+        if (newDeptId.equals(ticket.getDeptId())) {
+            return;
+        }
+
+        Long oldDeptId = ticket.getDeptId();
+
+        // 跨部门转派后，原部门的当前指派对工单不再有效：关闭当前指派记录并清空工单当前处理人，
+        // 避免原部门 HANDLER 仍凭 ASSIGNED 数据范围越权看到已归属新部门的工单。新部门主管再重新指派。
+        Long oldAssigneeId = ticket.getCurrentAssigneeId();
+        if (oldAssigneeId != null) {
+            LambdaUpdateWrapper<TicketAssignments> uw = new LambdaUpdateWrapper<>();
+            uw.eq(TicketAssignments::getTicketId, ticketId).set(TicketAssignments::getIsCurrent, false);
+            ticketAssignmentMapper.update(null, uw);
+            ticket.setCurrentAssigneeId(null);
+            recordHistory(ticketId, operatorId, TicketActionEnum.UPDATE, "current_assignee_id",
+                    oldAssigneeId.toString(), null, "转部门清除原部门指派");
+        }
+
+        ticket.setDeptId(newDeptId);
+        ticket.setUpdatedAt(LocalDateTime.now());
+        ticketMapper.updateById(ticket);
+
+        recordHistory(ticketId, operatorId, TicketActionEnum.TRANSFER_DEPT, "dept_id",
+                oldDeptId == null ? null : oldDeptId.toString(), newDeptId.toString(), null);
     }
 
     private void applyUpdateFields(Tickets ticket, TicketUpdateDTO dto) {
@@ -777,6 +841,28 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
                 }
             }
             default -> throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "仅主管/管理员可派单");
+        }
+    }
+
+    /**
+     * 转部门权限：仅 SUPERVISOR（本部门）/ ADMIN 可转部门；调试期放行。
+     */
+    private void assertCanTransfer(Tickets ticket) {
+        String role = SecurityUtils.getCurrentRole();
+        if (role == null) {
+            // 已强制认证，到此处 role 仍为空属异常：用户角色未配置，fail-closed 拒绝而非静默放行
+            throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "当前用户角色未配置，拒绝访问");
+        }
+        Long deptId = resolveCurrentDeptId();
+        switch (role) {
+            case "ADMIN" -> { /* 放行 */ }
+            case "SUPERVISOR" -> {
+                // 主管仅能转本部门的工单；转出去之后该工单即脱离其数据范围（交由目标部门接管）
+                if (deptId == null || ticket.getDeptId() == null || !deptId.equals(ticket.getDeptId())) {
+                    throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "仅能转本部门工单");
+                }
+            }
+            default -> throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "仅主管/管理员可转部门");
         }
     }
 

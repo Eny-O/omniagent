@@ -35,6 +35,9 @@ public class TicketCreateDTO {
     @Schema(description = "工单来源", example = "WEB")
     private String source;
 
+    @Schema(description = "工单所属部门ID（受理部门）。不传则默认取创建人所属部门；可用于跨部门故障指定正确的受理部门", example = "6")
+    private Long deptId;
+
     @Schema(description = "联系人电话", example = "13800000001")
     private String contactPhone;
 

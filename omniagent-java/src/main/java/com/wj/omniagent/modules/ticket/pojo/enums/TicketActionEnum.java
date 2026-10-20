@@ -11,7 +11,8 @@ public enum TicketActionEnum {
     ASSIGN("ASSIGN", "派单/转派"),
     STATUS_CHANGE("STATUS_CHANGE", "状态流转"),
     WITHDRAW("WITHDRAW", "撤回工单"),
-    DELETE("DELETE", "删除工单");
+    DELETE("DELETE", "删除工单"),
+    TRANSFER_DEPT("TRANSFER_DEPT", "转部门");
 
     private final String code;
     private final String desc;

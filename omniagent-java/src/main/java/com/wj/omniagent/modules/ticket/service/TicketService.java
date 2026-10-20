@@ -63,6 +63,11 @@ public interface TicketService extends IService<Tickets> {
     void assignTicket(Long id, TicketAssignDTO dto, Long operatorId);
 
     /**
+     * 转部门（主管 / 管理员）：变更工单所属受理部门，并清除原部门指派避免越权滞留。
+     */
+    void transferDepartment(Long ticketId, Long newDeptId, Long operatorId);
+
+    /**
      * 查询工单操作历史（审计轨迹），按操作时间升序返回。
      * 仅拥有该工单查看权限（DataScope）的用户可见。
      */

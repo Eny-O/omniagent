@@ -9,6 +9,7 @@ import com.wj.omniagent.modules.ticket.pojo.dto.TicketUpdateDTO;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketUpdateStatusDTO;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketAssignDTO;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketCommentCreateDTO;
+import com.wj.omniagent.modules.ticket.pojo.dto.TicketTransferDeptDTO;
 import com.wj.omniagent.modules.ticket.pojo.dos.TicketHistory;
 import com.wj.omniagent.modules.ticket.pojo.dos.TicketComments;
 import com.wj.omniagent.modules.ticket.pojo.vo.TicketPageVO;
@@ -118,6 +119,15 @@ public class TicketController {
             @Parameter(description = "工单ID") @PathVariable Long id,
             @RequestBody @Valid TicketAssignDTO dto) {
         ticketService.assignTicket(id, dto, getCurrentUserId());
+        return ResponseResult.success(ticketService.getTicketById(id));
+    }
+
+    @Operation(summary = "转部门（主管 / 管理员）")
+    @PostMapping("/{id}/transfer-department")
+    public ResponseResult<TicketVO> transferDepartment(
+            @Parameter(description = "工单ID") @PathVariable Long id,
+            @RequestBody @Valid TicketTransferDeptDTO dto) {
+        ticketService.transferDepartment(id, dto.getNewDeptId(), getCurrentUserId());
         return ResponseResult.success(ticketService.getTicketById(id));
     }
 
