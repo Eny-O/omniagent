@@ -17,7 +17,7 @@ class Settings(BaseSettings):
 
     # === Java 后端连接（Agent 调 Java REST 用）===
     omniagent_api_base_url: str = "http://localhost:8080"
-    omniagent_api_key: str = ""
+    omniagent_api_key: str = "123456"
 
 
 # 单例，全项目复用

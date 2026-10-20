@@ -3,6 +3,7 @@ package com.wj.omniagent.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wj.omniagent.common.enums.ErrorCodeEnum;
 import com.wj.omniagent.common.pojo.result.ResponseResult;
+import com.wj.omniagent.filter.MachineIdentityAuthenticationFilter;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
@@ -20,6 +21,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandler;
+import org.springframework.security.web.access.intercept.AuthorizationFilter;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.web.cors.CorsConfiguration;
@@ -85,6 +87,11 @@ public class SecurityConfig {
     }
 
     @Bean
+    public MachineIdentityAuthenticationFilter machineIdentityAuthenticationFilter() {
+        return new MachineIdentityAuthenticationFilter();
+    }
+
+    @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
                 // 禁用 CSRF，前后端分离场景不适用
@@ -129,7 +136,9 @@ public class SecurityConfig {
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint(authenticationEntryPoint())
                         .accessDeniedHandler(accessDeniedHandler())
-                );
+                )
+                // Agent认证过滤器：在 AuthorizationFilter 之前
+                .addFilterBefore(machineIdentityAuthenticationFilter(), AuthorizationFilter.class);
 
         return http.build();
     }

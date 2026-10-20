@@ -3,11 +3,17 @@
 每个工具封装一类后端能力（查/建/改/删），内部通过 backend_client 调 Java，
 通过 dict_service 做「中文标签 ↔ id」归一化。新增工单工具时加在此文件，
 并在 app/tools/__init__.py 的 tools 列表中登记。
+
+身份透传：工具通过 LangGraph 注入的 `runtime: ToolRuntime` 读取当前请求的操作人身份
+（user_id / role），其数据来自 api/agent.py 调用 ainvoke 时传入的
+config["configurable"]。ToolRuntime 由框架自动注入、LLM 不可见，比手动透传 config
+参数可靠（实测本版本中裸 config 参数不会注入到工具）。
 """
 import json
 from typing import Optional, Union
 
 from langchain.tools import tool
+from langgraph.prebuilt import ToolRuntime
 
 from app.repositories import backend_client
 from app.services import dict_service
@@ -21,6 +27,12 @@ from app.schemas.ticket import (
 )
 
 
+def _acting(runtime: ToolRuntime) -> tuple:
+    """从 ToolRuntime 的 config 读取当前请求的操作人身份。"""
+    cfg = (runtime.config or {}).get("configurable", {})
+    return cfg.get("acting_user"), cfg.get("acting_role")
+
+
 @tool(args_schema=QueryTicketSchema)
 async def query_tickets(
     keyword: Optional[str] | None = None,
@@ -29,9 +41,11 @@ async def query_tickets(
     category_id: Optional[Union[int, str]] = None,
     page: int = 1,
     page_size: int = 10,
+    runtime: ToolRuntime = None,
 ) -> str:
     """查询工单。用于根据关键词、状态、优先级、分类等条件检索工单列表。
     分类/优先级/状态可传中文标签或数字 id，由 dict_service 归一化为 Java 所需 id。"""
+    acting_user, acting_role = _acting(runtime)
     # 归一化：中文标签或数字 id -> Java 需要的整数 id（从预热缓存取规则，无额外网络请求）
     category_id = await dict_service.resolve_category(category_id)
     priority_id = await dict_service.resolve_priority(priority_id)
@@ -44,13 +58,15 @@ async def query_tickets(
             category_id=category_id,
             page=page,
             page_size=page_size,
+            acting_user=acting_user,
+            acting_role=acting_role,
         )
         records = data.get("records") or []
         if not records:
             return "未查询到相关工单。"
         return json.dumps(records, ensure_ascii=False)
     except backend_client.BackendError as e:
-        return f"❌ 查询失败：{e}"
+        return f"查询工单列表失败：{e}"
 
 
 @tool(args_schema=CreateTicketSchema)
@@ -64,9 +80,11 @@ async def create_ticket(
     contact_email: Optional[str] = None,
     location: Optional[str] = None,
     expected_resolve_at: Optional[str] = None,
+    runtime: ToolRuntime = None,
 ) -> str:
     """创建工单。当用户描述了一个故障/需求并希望新建工单时调用。
     分类/优先级可传中文标签（如'硬件故障'/'高'）或数字 id，由 dict_service 归一化。"""
+    acting_user, acting_role = _acting(runtime)
     # 归一化：分类/优先级中文标签或数字 id -> Java 需要的整数 id；来源校验合法编码（复用预热缓存，无额外网络请求）
     category_id = await dict_service.resolve_category(category)
     priority_id = await dict_service.resolve_priority(priority)
@@ -87,45 +105,51 @@ async def create_ticket(
     if expected_resolve_at is not None:
         payload["expectedResolveAt"] = expected_resolve_at
     try:
-        data = await backend_client.create_ticket(payload)
+        data = await backend_client.create_ticket(payload, acting_user=acting_user, acting_role=acting_role)
         return json.dumps(data, ensure_ascii=False)
     except backend_client.BackendError as e:
-        return f"❌ 创建工单失败：{e}"
+        return f"创建工单失败：{e}"
 
 
 @tool(args_schema=GetTicketSchema)
-async def get_ticket(ticket_id: int) -> str:
+async def get_ticket(ticket_id: int, runtime: ToolRuntime = None) -> str:
     """查询工单详情。当用户给出工单ID想看具体信息时调用。"""
+    acting_user, acting_role = _acting(runtime)
     try:
-        data = await backend_client.get_ticket(ticket_id)
+        data = await backend_client.get_ticket(ticket_id, acting_user=acting_user, acting_role=acting_role)
         return json.dumps(data, ensure_ascii=False)
     except backend_client.BackendError as e:
-        return f"❌ 查询失败：{e}"
+        return f"查询工单详情失败：{e}"
 
 
 @tool(args_schema=UpdateTicketStatusSchema)
 async def update_ticket_status(
-    ticket_id: int, target_status_code: str, remark: Optional[str] = None
+    ticket_id: int,
+    target_status_code: str,
+    remark: Optional[str] = None,
+    runtime: ToolRuntime = None,
 ) -> str:
     """更新工单状态。当用户要求改变工单状态（如'标记为处理中'、'关闭工单'）时调用。
     target_status_code 用状态编码：DRAFT/PENDING/PROCESSING/RESOLVED/CLOSED。"""
+    acting_user, acting_role = _acting(runtime)
     try:
         data = await backend_client.update_ticket_status(
-            ticket_id, target_status_code, remark
+            ticket_id, target_status_code, remark, acting_user=acting_user, acting_role=acting_role
         )
-        return "✅ 工单状态已更新。" if not data else json.dumps(data, ensure_ascii=False)
+        return "工单状态已更新。" if not data else json.dumps(data, ensure_ascii=False)
     except backend_client.BackendError as e:
-        return f"❌ 更新失败：{e}"
+        return f"更新工单状态失败：{e}"
 
 
 @tool(args_schema=DeleteTicketSchema)
-async def delete_ticket(ticket_id: int) -> str:
+async def delete_ticket(ticket_id: int, runtime: ToolRuntime = None) -> str:
     """删除工单。当用户明确要求删除某个工单时调用。"""
+    acting_user, acting_role = _acting(runtime)
     try:
-        await backend_client.delete_ticket(ticket_id)
-        return f"✅ 工单 {ticket_id} 已删除。"
+        await backend_client.delete_ticket(ticket_id, acting_user=acting_user, acting_role=acting_role)
+        return f"工单 {ticket_id} 已删除。"
     except backend_client.BackendError as e:
-        return f"❌ 删除失败：{e}"
+        return f"删除工单失败：{e}"
 
 
 @tool(args_schema=UpdateTicketInfoSchema)
@@ -140,10 +164,12 @@ async def update_ticket(
     contact_email: Optional[str] = None,
     location: Optional[str] = None,
     expected_resolve_at: Optional[str] = None,
+    runtime: ToolRuntime = None,
 ) -> str:
     """更新工单基本信息。当用户要修改某工单的标题/描述/分类/优先级/处理人/联系方式/位置/预计解决时间时调用。
     分类/优先级可传中文标签(如'硬件故障'/'高')或数字 id，由 dict_service 归一化。
     只传需要修改的字段；文本字段传空字符串可清空。"""
+    acting_user, acting_role = _acting(runtime)
     # 归一化：中文标签或数字 id -> Java 需要的整数 id（复用预热缓存，无额外网络请求）
     category_id = await dict_service.resolve_category(category)
     priority_id = await dict_service.resolve_priority(priority)
@@ -167,7 +193,7 @@ async def update_ticket(
     if expected_resolve_at is not None:
         payload["expectedResolveAt"] = expected_resolve_at
     try:
-        data = await backend_client.update_ticket(ticket_id, payload)
-        return "✅ 工单信息已更新。" if not data else json.dumps(data, ensure_ascii=False)
+        data = await backend_client.update_ticket(ticket_id, payload, acting_user=acting_user, acting_role=acting_role)
+        return "工单信息已更新。" if not data else json.dumps(data, ensure_ascii=False)
     except backend_client.BackendError as e:
-        return f"❌ 更新失败：{e}"
+        return f"更新工单信息失败：{e}"

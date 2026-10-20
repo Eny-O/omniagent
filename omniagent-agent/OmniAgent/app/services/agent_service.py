@@ -26,10 +26,14 @@ llm_with_tools = llm.bind_tools(tools)
 class OverAllState(MessagesState):
     user_input: str
     response: str
+    acting_user: int | None = None
+    acting_role: str | None = None
 
 
 class InputState(TypedDict):
     user_input: str
+    acting_user: int | None = None
+    acting_role: str | None = None
 
 
 class OutputState(TypedDict):
@@ -44,6 +48,8 @@ def bootstrap_node(state: InputState) -> OverAllState:
         ],
         "response": "",
         "user_input": state["user_input"],
+        "acting_user": state.get("acting_user", None),
+        "acting_role": state.get("acting_role", None),
     }
 
 
