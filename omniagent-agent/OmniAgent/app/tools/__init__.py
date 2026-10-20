@@ -16,6 +16,12 @@ from app.tools.ticket_tools import (
     update_ticket_status,
     update_ticket,
     delete_ticket,
+    withdraw_ticket,
+    assign_ticket,
+    transfer_department,
+    get_ticket_history,
+    add_ticket_comment,
+    list_ticket_comments,
 )
 
 # 已注册工具列表（graph 装配时直接使用）
@@ -26,6 +32,12 @@ tools = [
     update_ticket_status,
     update_ticket,
     delete_ticket,
+    withdraw_ticket,
+    assign_ticket,
+    transfer_department,
+    get_ticket_history,
+    add_ticket_comment,
+    list_ticket_comments,
 ]
 
 __all__ = ["tools"]

@@ -163,3 +163,88 @@ async def update_ticket(
     return await request(
         "PUT", f"/api/tickets/{ticket_id}", json=payload, acting_user=acting_user, acting_role=acting_role
     )
+
+
+async def withdraw_ticket(
+    ticket_id: int,
+    *,
+    acting_user: int | None = None,
+    acting_role: str | None = None,
+) -> dict:
+    """撤回工单（POST /api/tickets/{id}/withdraw）。报障人本人、未处理前可撤。"""
+    return await request(
+        "POST", f"/api/tickets/{ticket_id}/withdraw", acting_user=acting_user, acting_role=acting_role
+    )
+
+
+async def assign_ticket(
+    ticket_id: int,
+    assignee_id: int,
+    *,
+    priority_id: int | None = None,
+    remark: str | None = None,
+    acting_user: int | None = None,
+    acting_role: str | None = None,
+) -> dict:
+    """派单（POST /api/tickets/{id}/assign）。主管/管理员调用，指定处理人，可选优先级终审。"""
+    body: dict = {"assigneeId": assignee_id}
+    if priority_id is not None:
+        body["priorityId"] = priority_id
+    if remark is not None:
+        body["remark"] = remark
+    return await request(
+        "POST", f"/api/tickets/{ticket_id}/assign", json=body, acting_user=acting_user, acting_role=acting_role
+    )
+
+
+async def transfer_department(
+    ticket_id: int,
+    new_dept_id: int,
+    *,
+    acting_user: int | None = None,
+    acting_role: str | None = None,
+) -> dict:
+    """转部门（POST /api/tickets/{id}/transfer-department）。主管/管理员调用。"""
+    return await request(
+        "POST", f"/api/tickets/{ticket_id}/transfer-department",
+        json={"newDeptId": new_dept_id}, acting_user=acting_user, acting_role=acting_role
+    )
+
+
+async def get_ticket_history(
+    ticket_id: int,
+    *,
+    acting_user: int | None = None,
+    acting_role: str | None = None,
+) -> dict:
+    """查询工单操作历史（GET /api/tickets/{id}/history），返回 List。"""
+    return await request(
+        "GET", f"/api/tickets/{ticket_id}/history", acting_user=acting_user, acting_role=acting_role
+    )
+
+
+async def add_ticket_comment(
+    ticket_id: int,
+    content: str,
+    *,
+    is_internal: bool = False,
+    acting_user: int | None = None,
+    acting_role: str | None = None,
+) -> dict:
+    """添加工单评论/备注（POST /api/tickets/{id}/comments）。"""
+    return await request(
+        "POST", f"/api/tickets/{ticket_id}/comments",
+        json={"content": content, "isInternal": is_internal}, acting_user=acting_user, acting_role=acting_role
+    )
+
+
+async def list_ticket_comments(
+    ticket_id: int,
+    *,
+    acting_user: int | None = None,
+    acting_role: str | None = None,
+) -> dict:
+    """查询工单评论列表（GET /api/tickets/{id}/comments），返回 List。"""
+    return await request(
+        "GET", f"/api/tickets/{ticket_id}/comments", acting_user=acting_user, acting_role=acting_role
+    )
