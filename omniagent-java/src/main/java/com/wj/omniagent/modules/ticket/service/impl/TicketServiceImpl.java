@@ -756,7 +756,6 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
             throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "当前用户角色未配置，拒绝访问");
         }
         Long uid = SecurityUtils.getCurrentUserId();
-        Long deptId = resolveCurrentDeptId();
         switch (role) {
             case "ADMIN" -> { /* 放行 */ }
             case "REPORTER" -> {
@@ -768,13 +767,19 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
                 }
             }
             case "HANDLER" -> {
-                if (!isOwnerOrAssignee(ticket, uid)) {
-                    throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "仅能修改本人创建或分配的工单");
+                if (status != TicketStatusEnum.DRAFT && status != TicketStatusEnum.PENDING) {
+                    throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "已处理的工单不允许修改");
+                }
+                if (uid == null || ticket.getCreatorId() == null || !ticket.getCreatorId().equals(uid)) {
+                    throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "仅能修改本人创建的工单");
                 }
             }
             case "SUPERVISOR" -> {
-                if (deptId == null || ticket.getDeptId() == null || !deptId.equals(ticket.getDeptId())) {
-                    throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "仅能修改本部门工单");
+                if (status != TicketStatusEnum.DRAFT && status != TicketStatusEnum.PENDING) {
+                    throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "已处理的工单不允许修改");
+                }
+                if (uid == null || ticket.getCreatorId() == null || !ticket.getCreatorId().equals(uid)) {
+                    throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "仅能修改本人创建的工单");
                 }
             }
             default -> throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION);

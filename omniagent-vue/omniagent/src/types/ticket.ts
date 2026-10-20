@@ -28,6 +28,7 @@ export interface TicketVO {
  */
 export interface TicketPageVO {
   id: number
+  creatorId: number
   ticketNo: string
   title: string
   categoryId: number | null

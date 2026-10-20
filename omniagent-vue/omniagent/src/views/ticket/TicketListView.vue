@@ -17,12 +17,18 @@ const router = useRouter()
 const userStore = useUserStore()
 
 // 前端权限闸门（真实鉴权在后端；调试期 currentRole 为 null 时按"放行"处理）
-const isReporter = computed(() => userStore.currentRole === 'REPORTER')
 const isAdmin = computed(() => userStore.currentRole === 'ADMIN')
 const isTerminal = (row: TicketPageVO) =>
   dictStore.statuses.find((s) => s.value === row.statusId)?.isTerminal === true
-// 编辑：非终态 +（管理员 或 非报障人角色）；报障人的"编辑自己未处理工单"走详情页按需放开
-const canEdit = (row: TicketPageVO) => !isTerminal(row) && (isAdmin.value || !isReporter.value)
+// 编辑权限闸门：管理员可编辑任意「非终态」工单；其余角色仅能编辑「本人创建且处于草稿/待处理」的工单
+const statusCode = (statusId: number | undefined) =>
+  dictStore.statusOptions.find((s) => s.value === statusId)?.code
+const isDraftOrPending = (row: TicketPageVO) =>
+  statusCode(row.statusId) === 'DRAFT' || statusCode(row.statusId) === 'PENDING'
+const canEdit = (row: TicketPageVO) =>
+  isAdmin.value
+    ? !isTerminal(row)
+    : row.creatorId === userStore.user?.id && isDraftOrPending(row)
 // 删除：仅管理员
 const canDelete = () => isAdmin.value
 

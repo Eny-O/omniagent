@@ -17,6 +17,9 @@ public class TicketPageVO {
     @Schema(description = "工单ID")
     private Long id;
 
+    @Schema(description = "创建人ID")
+    private Long creatorId;
+
     @Schema(description = "工单编号")
     private String ticketNo;
 
