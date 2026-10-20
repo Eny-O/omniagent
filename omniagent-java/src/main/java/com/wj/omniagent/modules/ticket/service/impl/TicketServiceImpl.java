@@ -97,6 +97,9 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
         }
         ticket.setStatusId(TicketStatusEnum.DRAFT.getSortOrder());
         ticket.setCreatorId(operatorId);
+        // 写入创建人所在部门：保证 SUPERVISOR 按部门(DEPARTMENT 数据范围)能看到并派发该工单。
+        // 不依赖前端传 deptId，既补全数据又防止报障人伪造部门。
+        ticket.setDeptId(resolveCurrentDeptId());
         ticket.setSource(effectiveSource);
         ticket.setCreatedAt(LocalDateTime.now());
         ticket.setUpdatedAt(LocalDateTime.now());
@@ -571,14 +574,15 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
     private DataScope resolveDataScope() {
         String role = SecurityUtils.getCurrentRole();
         if (role == null) {
-            return DataScope.ALL;
+            // 已强制认证（SecurityConfig 拦截未登录请求），到此处 role 仍为空属异常：用户角色未配置
+            throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "当前用户角色未配置，拒绝访问");
         }
         return switch (role) {
             case "REPORTER" -> DataScope.SELF;
             case "HANDLER" -> DataScope.ASSIGNED;
             case "SUPERVISOR" -> DataScope.DEPARTMENT;
             case "ADMIN" -> DataScope.ALL;
-            default -> DataScope.ALL;
+            default -> throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "未知角色：" + role);
         };
     }
 
@@ -633,7 +637,8 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
     private void assertViewable(Tickets ticket) {
         String role = SecurityUtils.getCurrentRole();
         if (role == null) {
-            return; // 调试期宽松
+            // 已强制认证，到此处 role 仍为空属异常：用户角色未配置，fail-closed 拒绝而非静默放行
+            throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "当前用户角色未配置，拒绝访问");
         }
         DataScope scope = resolveDataScope();
         Long uid = SecurityUtils.getCurrentUserId();
@@ -660,7 +665,8 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
     private void assertEditable(Tickets ticket, TicketStatusEnum status) {
         String role = SecurityUtils.getCurrentRole();
         if (role == null) {
-            return; // 调试期宽松
+            // 已强制认证，到此处 role 仍为空属异常：用户角色未配置，fail-closed 拒绝而非静默放行
+            throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "当前用户角色未配置，拒绝访问");
         }
         Long uid = SecurityUtils.getCurrentUserId();
         Long deptId = resolveCurrentDeptId();
@@ -694,7 +700,8 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
     private void assertCanProcess(Tickets ticket) {
         String role = SecurityUtils.getCurrentRole();
         if (role == null) {
-            return; // 调试期宽松
+            // 已强制认证，到此处 role 仍为空属异常：用户角色未配置，fail-closed 拒绝而非静默放行
+            throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "当前用户角色未配置，拒绝访问");
         }
         if (!"HANDLER".equals(role) && !"SUPERVISOR".equals(role) && !"ADMIN".equals(role)) {
             throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "报障人无权限推进工单状态");
@@ -718,7 +725,8 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
     private void assertCanDelete() {
         String role = SecurityUtils.getCurrentRole();
         if (role == null) {
-            return; // 调试期宽松
+            // 已强制认证，到此处 role 仍为空属异常：用户角色未配置，fail-closed 拒绝而非静默放行
+            throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "当前用户角色未配置，拒绝访问");
         }
         if (!"ADMIN".equals(role)) {
             throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "仅管理员可删除工单");
@@ -731,7 +739,8 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
     private void assertCanWithdraw(Tickets ticket, TicketStatusEnum status) {
         String role = SecurityUtils.getCurrentRole();
         if (role == null) {
-            return; // 调试期宽松
+            // 已强制认证，到此处 role 仍为空属异常：用户角色未配置，fail-closed 拒绝而非静默放行
+            throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "当前用户角色未配置，拒绝访问");
         }
         Long uid = SecurityUtils.getCurrentUserId();
         switch (role) {
@@ -754,7 +763,8 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
     private void assertCanAssign(Tickets ticket) {
         String role = SecurityUtils.getCurrentRole();
         if (role == null) {
-            return; // 调试期宽松
+            // 已强制认证，到此处 role 仍为空属异常：用户角色未配置，fail-closed 拒绝而非静默放行
+            throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "当前用户角色未配置，拒绝访问");
         }
         Long deptId = resolveCurrentDeptId();
         switch (role) {

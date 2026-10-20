@@ -85,10 +85,11 @@ public class SecurityUtils {
             if (principal instanceof LoginUserPrincipal) {
                 String role = ((LoginUserPrincipal) principal).getRole();
                 if (role != null) {
-                    return role;
+                    return role.trim();
                 }
             }
         }
-        return ActingContext.getRole();
+        String actingRole = ActingContext.getRole();
+        return actingRole != null ? actingRole.trim() : null;
     }
 }
