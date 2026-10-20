@@ -283,6 +283,22 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
         Tickets beforeUpdate = new Tickets();
         BeanUtils.copyProperties(ticket, beforeUpdate);
         applyUpdateFields(ticket, dto);
+
+        // 部门变更（报障人编辑改部门）：若跨部门且已有当前处理人（DRAFT 派单后处于 PENDING），
+        // 清掉原部门指派，避免原部门 HANDLER 凭 ASSIGNED 数据范围越权滞留看到已归属新部门的工单；
+        // 新部门主管再重新指派。部门未变化（含 deptId 为空表示不改）则不处理。
+        if (dto.getDeptId() != null && !dto.getDeptId().equals(beforeUpdate.getDeptId())) {
+            Long oldAssigneeId = ticket.getCurrentAssigneeId();
+            if (oldAssigneeId != null) {
+                LambdaUpdateWrapper<TicketAssignments> uw = new LambdaUpdateWrapper<>();
+                uw.eq(TicketAssignments::getTicketId, id).set(TicketAssignments::getIsCurrent, false);
+                ticketAssignmentMapper.update(null, uw);
+                ticket.setCurrentAssigneeId(null);
+                recordHistory(id, operatorId, TicketActionEnum.UPDATE, "current_assignee_id",
+                        oldAssigneeId.toString(), null, "改部门清除原部门指派");
+            }
+        }
+
         ticket.setUpdatedAt(LocalDateTime.now());
 
         ticketMapper.updateById(ticket);
@@ -489,6 +505,11 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
             assertPriorityExists(dto.getPriorityId());
             ticket.setPriorityId(dto.getPriorityId());
         }
+        // 受理部门：报障人未处理前编辑时可改归属部门；校验目标部门存在，避免写入孤儿部门ID
+        if (dto.getDeptId() != null) {
+            departmentService.getDepartmentById(dto.getDeptId());
+            ticket.setDeptId(dto.getDeptId());
+        }
         if (dto.getCurrentAssigneeId() != null) {
             ticket.setCurrentAssigneeId(dto.getCurrentAssigneeId());
         }
@@ -556,6 +577,7 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
         recordFieldChange(ticketId, operatorId, "description", before.getDescription(), after.getDescription());
         recordFieldChange(ticketId, operatorId, "category_id", before.getCategoryId(), after.getCategoryId());
         recordFieldChange(ticketId, operatorId, "priority_id", before.getPriorityId(), after.getPriorityId());
+        recordFieldChange(ticketId, operatorId, "dept_id", before.getDeptId(), after.getDeptId());
         recordFieldChange(ticketId, operatorId, "current_assignee_id", before.getCurrentAssigneeId(), after.getCurrentAssigneeId());
         recordFieldChange(ticketId, operatorId, "contact_phone", before.getContactPhone(), after.getContactPhone());
         recordFieldChange(ticketId, operatorId, "contact_email", before.getContactEmail(), after.getContactEmail());

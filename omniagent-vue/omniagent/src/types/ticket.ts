@@ -12,6 +12,7 @@ export interface TicketVO {
   creatorId: number
   currentAssigneeId: number | null
   source: string
+  deptId: number | null
   contactPhone: string
   contactEmail: string
   location: string
@@ -53,6 +54,7 @@ export interface TicketForm {
   contactEmail: string
   location: string
   expectedResolveAt: string | null
+  deptId: number | null
 }
 
 /**
@@ -69,6 +71,7 @@ export interface TicketCreateDTO {
   contactEmail: string
   location: string
   expectedResolveAt: string | null
+  deptId: number | null
 }
 
 /**
@@ -81,6 +84,7 @@ export interface TicketUpdateDTO {
   description?: string
   categoryId?: number | null
   priorityId?: number | null
+  deptId?: number | null
   currentAssigneeId?: number | null
   contactPhone?: string
   contactEmail?: string

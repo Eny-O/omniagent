@@ -15,11 +15,14 @@ import {
   getTicketById,
   getTicketHistory,
   listComments,
+  transferDepartment,
   updateTicketStatus,
   withdrawTicket,
 } from '@/api/ticket'
 import { pageUsers } from '@/api/user'
+import { listAllDepartments } from '@/api/department'
 import type { UserPageVO } from '@/types/user'
+import type { DepartmentVO } from '@/types/department'
 import { useDictStore } from '@/stores/dict'
 import { useUserStore } from '@/stores/user'
 
@@ -64,6 +67,12 @@ const canAssign = computed(
 const canComment = computed(
   () => currentRole.value === null || (!isReporter.value && !isTerminal.value),
 )
+// 转部门权限闸门（真实鉴权在后端 assertCanTransfer）：主管 / 管理员可见，终态工单不可
+const canTransfer = computed(
+  () =>
+    currentRole.value === null ||
+    ((currentRole.value === 'SUPERVISOR' || currentRole.value === 'ADMIN') && !isTerminal.value),
+)
 
 // 状态正向推进目标（字典驱动，无硬编码）
 const currentStatus = computed(() =>
@@ -72,7 +81,8 @@ const currentStatus = computed(() =>
 const nextStatus = computed(() => {
   const cur = currentStatus.value
   if (!cur || cur.sortOrder == null) return null
-  return dictStore.statuses.find((s) => s.sortOrder === cur.sortOrder + 1) || null
+  const curSortOrder: number = cur.sortOrder
+  return dictStore.statuses.find((s) => s.sortOrder === curSortOrder + 1) || null
 })
 const nextStatusCode = computed(() => nextStatus.value?.code ?? null)
 const nextStatusLabel = computed(() => nextStatus.value?.label ?? '')
@@ -119,6 +129,41 @@ const loadUsers = async () => {
 
 const userName = (id: number | null) =>
   id == null ? '-' : userMap.value[id] || `用户${id}`
+
+// 部门字典（id -> 名称）与层级下拉选项，用于展示受理部门名称 + 转部门时选择目标部门
+const allDepartments = ref<DepartmentVO[]>([])
+const deptMap = ref<Record<number, string>>({})
+const deptOptions = computed(() => {
+  const build = (list: DepartmentVO[], depth = 0): { value: number; label: string }[] => {
+    const r: { value: number; label: string }[] = []
+    list.forEach((d) => {
+      const prefix = depth > 0 ? '　'.repeat(depth) + '└ ' : ''
+      r.push({ value: d.id, label: `${prefix}${d.deptName}` })
+      if (d.children) r.push(...build(d.children, depth + 1))
+    })
+    return r
+  }
+  return build(allDepartments.value)
+})
+const loadDepartments = async () => {
+  try {
+    const res = await listAllDepartments()
+    if (res.code === '200') {
+      allDepartments.value = res.data
+      const flat: Record<number, string> = {}
+      const walk = (l: DepartmentVO[]) =>
+        l.forEach((d) => {
+          flat[d.id] = d.deptName
+          if (d.children) walk(d.children)
+        })
+      walk(res.data)
+      deptMap.value = flat
+    }
+  } catch {
+    // 部门解析失败仅回退为展示 id，不影响主流程
+  }
+}
+const deptName = (id: number | null) => (id == null ? '-' : deptMap.value[id] || `部门${id}`)
 
 // 状态推进
 const handleAdvance = async () => {
@@ -180,6 +225,26 @@ const submitAssign = async () => {
   ElMessage.success('派单成功')
   assignVisible.value = false
   await loadTicket()
+}
+
+// 转部门弹窗（主管 / 管理员）
+const transferVisible = ref(false)
+const transferForm = reactive<{ newDeptId: number | null }>({ newDeptId: null })
+const openTransfer = () => {
+  transferForm.newDeptId = null
+  transferVisible.value = true
+}
+const submitTransfer = async () => {
+  if (!transferForm.newDeptId) {
+    ElMessage.warning('请选择目标部门')
+    return
+  }
+  // 调 Batch2 后端 POST /api/tickets/{id}/transfer-department；跨部门会清原指派（后端已保证）
+  const res = await transferDepartment(ticketId.value, transferForm.newDeptId)
+  if (res.code !== '200') return
+  ElMessage.success('已转部门')
+  if (res.data) ticket.value = res.data // 直接刷新为后端返回的最新工单（含新部门名）
+  transferVisible.value = false
 }
 
 // 操作历史
@@ -253,7 +318,7 @@ const goBack = () => {
 
 onMounted(async () => {
   await dictStore.loadDicts()
-  await Promise.all([loadTicket(), loadUsers()])
+  await Promise.all([loadTicket(), loadUsers(), loadDepartments()])
 })
 </script>
 
@@ -287,6 +352,9 @@ onMounted(async () => {
       <el-button v-if="canAssign" type="success" @click="openAssign">
         派单
       </el-button>
+      <el-button v-if="canTransfer" type="warning" @click="openTransfer">
+        转部门
+      </el-button>
     </div>
 
     <el-tabs v-model="activeTab" @tab-change="onTabChange">
@@ -303,6 +371,7 @@ onMounted(async () => {
             {{ dictStore.getPriorityLabel(ticket.priorityId) }}
           </el-descriptions-item>
           <el-descriptions-item label="来源">{{ dictStore.getSourceLabel(ticket.source) }}</el-descriptions-item>
+          <el-descriptions-item label="受理部门">{{ deptName(ticket.deptId) }}</el-descriptions-item>
           <el-descriptions-item label="创建人">
             {{ userName(ticket.creatorId) }}
           </el-descriptions-item>
@@ -436,6 +505,30 @@ onMounted(async () => {
       <template #footer>
         <el-button @click="assignVisible = false">取消</el-button>
         <el-button type="primary" @click="submitAssign">确定派单</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 转部门弹窗 -->
+    <el-dialog v-model="transferVisible" title="转部门" width="420px">
+      <el-form label-width="80px">
+        <el-form-item label="目标部门" required>
+          <el-select
+            v-model="transferForm.newDeptId"
+            placeholder="请选择目标部门"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="item in deptOptions.filter((o) => o.value !== ticket?.deptId)"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="transferVisible = false">取消</el-button>
+        <el-button type="primary" @click="submitTransfer">确定转部门</el-button>
       </template>
     </el-dialog>
   </div>

@@ -101,6 +101,17 @@ export const assignTicket = async (
 }
 
 /**
+ * 转部门（主管 / 管理员：变更工单所属受理部门，并清除原部门指派避免越权滞留）
+ * 后端校验：工单存在、非终态、SUPERVISOR 仅限本部门、ADMIN 不限、目标部门必须存在。
+ */
+export const transferDepartment = async (
+  id: number,
+  newDeptId: number,
+): Promise<ResponseResult<TicketVO>> => {
+  return await request.post(`/tickets/${id}/transfer-department`, { newDeptId })
+}
+
+/**
  * 查询工单操作历史（审计轨迹），按操作时间升序
  */
 export const getTicketHistory = async (

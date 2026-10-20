@@ -29,6 +29,9 @@ public class TicketUpdateDTO {
     @Schema(description = "工单优先级ID", example = "1")
     private Integer priorityId;
 
+    @Schema(description = "受理部门ID（报障人未处理前可在编辑时修改归属部门）", example = "1")
+    private Long deptId;
+
     @Schema(description = "当前处理人ID", example = "2")
     private Long currentAssigneeId;
 

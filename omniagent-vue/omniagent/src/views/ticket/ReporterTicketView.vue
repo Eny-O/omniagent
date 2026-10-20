@@ -124,7 +124,8 @@ const handleWithdraw = (row: TicketPageVO) => {
 
 const handleSubmit = async (formData: TicketForm) => {
   if (formData.id) {
-    // 编辑：转换为更新 DTO，排除 id 与 source（来源由后端按创建上下文决定）
+    // 编辑：转换为更新 DTO，排除 id、source（来源由后端按创建上下文决定）；
+    // 保留 deptId（报障人未处理前可在编辑态改归属部门，后端 updateTicket 已支持并做跨部门清指派）
     const { id, source, ...updateDto } = formData
     const res = await updateTicket(id, updateDto as TicketUpdateDTO)
     if (res.code !== '200') {

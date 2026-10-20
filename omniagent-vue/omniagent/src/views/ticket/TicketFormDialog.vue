@@ -1,11 +1,55 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import type { TicketForm } from '@/types/ticket'
 import { getTicketById } from '@/api/ticket'
+import { listAllDepartments } from '@/api/department'
 import { useDictStore } from '@/stores/dict'
+import { useUserStore } from '@/stores/user'
+import type { DepartmentVO } from '@/types/department'
 
 // 字典下拉选项（分类/优先级/来源）均由 dict store 动态提供
 const dictStore = useDictStore()
+// 当前登录用户（用于新建时默认预填其所属部门）
+const userStore = useUserStore()
+
+// 部门树（用于受理部门下拉），打开弹窗时按需加载
+const allDepartments = ref<DepartmentVO[]>([])
+
+// 将部门树平铺为带层级缩进的下拉选项（沿用 DepartmentFormDialog 的平铺思路）
+const deptOptions = computed(() => {
+  const build = (list: DepartmentVO[], depth = 0): { value: number; label: string }[] => {
+    const result: { value: number; label: string }[] = []
+    list.forEach((item) => {
+      const prefix = depth > 0 ? '　'.repeat(depth) + '└ ' : ''
+      result.push({ value: item.id, label: `${prefix}${item.deptName}` })
+      if (item.children && item.children.length > 0) {
+        result.push(...build(item.children, depth + 1))
+      }
+    })
+    return result
+  }
+  // 先组装成树，再平铺成选项
+  const map = new Map<number, DepartmentVO>()
+  const roots: DepartmentVO[] = []
+  allDepartments.value.forEach((item) => map.set(item.id, { ...item, children: [] }))
+  allDepartments.value.forEach((item) => {
+    const node = map.get(item.id)!
+    if (item.parentId && map.has(item.parentId)) {
+      map.get(item.parentId)!.children!.push(node)
+    } else {
+      roots.push(node)
+    }
+  })
+  return build(roots)
+})
+
+// 受理部门是否可编辑：新建(true) 可编辑；编辑态仅报障人(reporterMode)可改，其余只读
+// （归属变更对主管/管理员走「转部门」按钮）。reporter 模式下编辑入口已被列表 isDraftOrPending 限制为 DRAFT/PENDING，
+// 与后端 assertEditable 的「报障人仅未处理前可改」一致。
+const deptDisabled = computed(() => {
+  if (!props.ticket?.id) return false
+  return !props.reporterMode
+})
 
 const props = defineProps<{
   visible: boolean
@@ -26,6 +70,7 @@ const formData = ref<TicketForm>({
   priorityId: null,
   currentAssigneeId: null,
   source: 'WEB',
+  deptId: null,
   contactPhone: '',
   contactEmail: '',
   location: '',
@@ -68,6 +113,11 @@ watch(
     if (val) {
       // 兜底加载字典（幂等：列表页已加载则直接复用）
       await dictStore.loadDicts()
+      // 加载部门树（受理部门下拉），失败不影响其他字段
+      const deptRes = await listAllDepartments()
+      if (deptRes.code === '200') {
+        allDepartments.value = deptRes.data
+      }
       if (props.ticket?.id) {
         // 编辑：调用详情接口补全数据
         const res = await getTicketById(props.ticket.id)
@@ -86,6 +136,7 @@ watch(
           priorityId: null,
           currentAssigneeId: null,
           source: 'WEB',
+          deptId: userStore.user?.deptId ?? null,
           contactPhone: '',
           contactEmail: '',
           location: '',
@@ -152,6 +203,27 @@ const handleSubmit = async () => {
             <el-select v-model="formData.priorityId" placeholder="请选择" clearable style="width: 100%">
               <el-option
                 v-for="item in dictStore.priorityOptions"
+                :key="item.value"
+                :label="item.label"
+                :value="item.value"
+              />
+            </el-select>
+          </el-form-item>
+        </el-col>
+      </el-row>
+
+      <el-row :gutter="16">
+        <el-col :span="12">
+          <el-form-item label="受理部门">
+            <el-select
+              v-model="formData.deptId"
+              placeholder="请选择受理部门"
+              clearable
+              style="width: 100%"
+              :disabled="deptDisabled"
+            >
+              <el-option
+                v-for="item in deptOptions"
                 :key="item.value"
                 :label="item.label"
                 :value="item.value"
