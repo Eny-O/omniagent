@@ -36,6 +36,9 @@ public class TicketVO {
     @Schema(description = "创建人ID")
     private Long creatorId;
 
+    @Schema(description = "受理部门ID")
+    private Long deptId;
+
     @Schema(description = "当前处理人ID")
     private Long currentAssigneeId;
 

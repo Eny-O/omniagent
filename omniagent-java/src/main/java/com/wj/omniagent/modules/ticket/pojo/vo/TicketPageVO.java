@@ -20,6 +20,9 @@ public class TicketPageVO {
     @Schema(description = "创建人ID")
     private Long creatorId;
 
+    @Schema(description = "受理部门ID")
+    private Long deptId;
+
     @Schema(description = "工单编号")
     private String ticketNo;
 
