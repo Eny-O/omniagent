@@ -274,7 +274,11 @@ onMounted(async () => {
             {{ row.currentAssigneeId ? `用户${row.currentAssigneeId}` : '-' }}
           </template>
         </el-table-column>
-        <el-table-column prop="source" label="来源" width="80" />
+        <el-table-column label="来源" width="80">
+          <template #default="{ row }">
+            {{ dictStore.getSourceLabel(row.source) }}
+          </template>
+        </el-table-column>
         <el-table-column prop="createdAt" label="创建时间" width="160" />
         <el-table-column label="操作" width="220" fixed="right">
           <template #default="{ row }">

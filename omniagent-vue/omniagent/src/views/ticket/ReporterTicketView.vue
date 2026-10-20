@@ -3,12 +3,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { TicketPageVO, TicketForm, TicketUpdateDTO } from '@/types/ticket'
-import {
-  pageTickets,
-  createTicket,
-  updateTicket,
-  withdrawTicket,
-} from '@/api/ticket'
+import { pageTickets, createTicket, updateTicket, withdrawTicket } from '@/api/ticket'
 import { useDictStore } from '@/stores/dict'
 import TicketFormDialog from './TicketFormDialog.vue'
 
@@ -168,7 +163,12 @@ onMounted(async () => {
           />
         </el-form-item>
         <el-form-item label="状态">
-          <el-select v-model="searchForm.statusId" placeholder="全部" clearable style="width: 140px">
+          <el-select
+            v-model="searchForm.statusId"
+            placeholder="全部"
+            clearable
+            style="width: 140px"
+          >
             <el-option
               v-for="item in dictStore.statusOptions"
               :key="item.value"
@@ -214,18 +214,18 @@ onMounted(async () => {
             <el-tag :type="dictStore.getStatusTagType(row.statusId)">
               {{ dictStore.getStatusLabel(row.statusId) }}
             </el-tag>
-          </el-table-column>
-        <el-table-column prop="source" label="来源" width="80" />
+          </template>
+        </el-table-column>
+        <el-table-column label="来源" width="80">
+          <template #default="{ row }">
+            {{ dictStore.getSourceLabel(row.source) }}
+          </template>
+        </el-table-column>
         <el-table-column prop="createdAt" label="创建时间" width="160" />
         <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="goDetail(row)">详情</el-button>
-            <el-button
-              v-if="isDraftOrPending(row)"
-              link
-              type="primary"
-              @click="handleEdit(row)"
-            >
+            <el-button v-if="isDraftOrPending(row)" link type="primary" @click="handleEdit(row)">
               编辑
             </el-button>
             <el-button

@@ -69,6 +69,11 @@ export const useDictStore = defineStore('dict', () => {
   const getCategoryLabel = (id: number | null) => findLabel(categories.value, id)
   const getPriorityLabel = (id: number | null) => findLabel(priorities.value, id)
   const getStatusLabel = (id: number | null) => findLabel(statuses.value, id)
+  // 来源字典 value 为编码字符串（WEB/AGENT…），无法复用 number 版的 findLabel
+  const getSourceLabel = (code: string | null): string => {
+    if (!code) return '-'
+    return sources.value.find((item) => item.value === code)?.label || code
+  }
 
   /**
    * 状态标签颜色：保留原硬编码语义（仅显示用）。
@@ -103,6 +108,7 @@ export const useDictStore = defineStore('dict', () => {
     getCategoryLabel,
     getPriorityLabel,
     getStatusLabel,
+    getSourceLabel,
     getStatusTagType,
   }
 })

@@ -293,7 +293,7 @@ onMounted(async () => {
           <el-descriptions-item label="优先级">
             {{ dictStore.getPriorityLabel(ticket.priorityId) }}
           </el-descriptions-item>
-          <el-descriptions-item label="来源">{{ ticket.source }}</el-descriptions-item>
+          <el-descriptions-item label="来源">{{ dictStore.getSourceLabel(ticket.source) }}</el-descriptions-item>
           <el-descriptions-item label="创建人">
             {{ userName(ticket.creatorId) }}
           </el-descriptions-item>
