@@ -199,13 +199,15 @@ const handleWithdraw = async () => {
 
 // 派单弹窗
 const assignVisible = ref(false)
-const assignForm = reactive<{ assigneeId: number | null; remark: string }>({
+const assignForm = reactive<{ assigneeId: number | null; priorityId: number | null; remark: string }>({
   assigneeId: null,
+  priorityId: null,
   remark: '',
 })
 const userOptions = ref<UserPageVO[]>([])
 const openAssign = async () => {
   assignForm.assigneeId = null
+  assignForm.priorityId = ticket.value?.priorityId ?? null
   assignForm.remark = ''
   const res = await pageUsers({ pageNum: 1, pageSize: 200 })
   if (res.code === '200') userOptions.value = res.data.records
@@ -218,6 +220,7 @@ const submitAssign = async () => {
   }
   const dto: TicketAssignDTO = {
     assigneeId: assignForm.assigneeId,
+    priorityId: assignForm.priorityId,
     remark: assignForm.remark || undefined,
   }
   const res = await assignTicket(ticketId.value, dto)
@@ -483,6 +486,21 @@ onMounted(async () => {
     <!-- 派单弹窗 -->
     <el-dialog v-model="assignVisible" title="派单" width="420px">
       <el-form label-width="80px">
+        <el-form-item label="优先级(终审)">
+          <el-select
+            v-model="assignForm.priorityId"
+            placeholder="请确认/调整优先级"
+            clearable
+            style="width: 100%"
+          >
+            <el-option
+              v-for="item in dictStore.priorityOptions"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            />
+          </el-select>
+        </el-form-item>
         <el-form-item label="处理人" required>
           <el-select
             v-model="assignForm.assigneeId"

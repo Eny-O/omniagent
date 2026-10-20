@@ -147,6 +147,7 @@ export interface TicketComment {
  */
 export interface TicketAssignDTO {
   assigneeId: number
+  priorityId?: number | null
   remark?: string
 }
 

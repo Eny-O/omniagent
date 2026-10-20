@@ -54,6 +54,7 @@ import org.springframework.util.StringUtils;
 import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -431,6 +432,18 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
         ticket.setCurrentAssigneeId(dto.getAssigneeId());
         if (currentStatus == TicketStatusEnum.DRAFT || currentStatus == TicketStatusEnum.PENDING) {
             ticket.setStatusId(TicketStatusEnum.PENDING.getSortOrder());
+        }
+        // 优先级终审：支持侧在派单时确认/调整报障人申报的优先级（可选，不强制必填）
+        if (dto.getPriorityId() != null) {
+            assertPriorityExists(dto.getPriorityId().intValue());
+            Integer newPriority = dto.getPriorityId().intValue();
+            if (!Objects.equals(ticket.getPriorityId(), newPriority)) {
+                Integer oldPriorityId = ticket.getPriorityId();
+                ticket.setPriorityId(newPriority);
+                recordHistory(ticket.getId(), operatorId, TicketActionEnum.UPDATE, "priority_id",
+                        oldPriorityId == null ? null : oldPriorityId.toString(),
+                        newPriority.toString(), "派单时调整优先级");
+            }
         }
         ticket.setUpdatedAt(LocalDateTime.now());
         ticketMapper.updateById(ticket);

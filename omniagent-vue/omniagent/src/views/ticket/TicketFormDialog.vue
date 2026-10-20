@@ -206,6 +206,7 @@ const handleSubmit = async () => {
                 :value="item.value"
               />
             </el-select>
+            <div v-if="reporterMode" class="field-hint">请按实际紧急程度申报，主管受理时会确认终审</div>
           </el-form-item>
         </el-col>
       </el-row>
@@ -280,3 +281,12 @@ const handleSubmit = async () => {
     </template>
   </el-dialog>
 </template>
+
+<style scoped>
+.field-hint {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  line-height: 1.4;
+}
+</style>
