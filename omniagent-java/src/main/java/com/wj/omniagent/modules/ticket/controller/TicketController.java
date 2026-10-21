@@ -113,7 +113,15 @@ public class TicketController {
         return ResponseResult.success(ticketService.getTicketById(id));
     }
 
-    @Operation(summary = "派单（主管 / 管理员）")
+    @Operation(summary = "提交工单（创建者 / 管理员）：草稿转为待处理")
+    @PostMapping("/{id}/submit")
+    public ResponseResult<TicketVO> submit(
+            @Parameter(description = "工单ID") @PathVariable Long id) {
+        ticketService.submitTicket(id, getCurrentUserId());
+        return ResponseResult.success(ticketService.getTicketById(id));
+    }
+
+    @Operation(summary = "派单（主管 / 管理员）：指定处理人，不改变工单状态")
     @PostMapping("/{id}/assign")
     public ResponseResult<TicketVO> assign(
             @Parameter(description = "工单ID") @PathVariable Long id,

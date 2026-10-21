@@ -15,6 +15,7 @@ import {
   getTicketById,
   getTicketHistory,
   listComments,
+  submitTicket,
   transferDepartment,
   updateTicketStatus,
   withdrawTicket,
@@ -61,8 +62,21 @@ const canWithdraw = computed(
       ticket.value?.statusId === 1) ||
       currentRole.value === 'ADMIN'),
 )
+// 派单权限闸门：主管 / 管理员可见；草稿(DRAFT)态隐藏——草稿只能由创建者先“提交”，
+// 不再借派单把草稿推到待处理（解耦派单“指定处理人”与“草稿→待处理”流转）
 const canAssign = computed(
-  () => currentRole.value === null || currentRole.value === 'SUPERVISOR' || currentRole.value === 'ADMIN',
+  () =>
+    (currentRole.value === null || currentRole.value === 'SUPERVISOR' || currentRole.value === 'ADMIN') &&
+    ticket.value?.statusId !== 1,
+)
+// 提交权限闸门：创建者本人 / 管理员 在草稿(DRAFT)态可见；调试期 role 为 null 放开
+const canSubmit = computed(
+  () =>
+    currentRole.value === null ||
+    currentRole.value === 'ADMIN' ||
+    (ticket.value != null &&
+      ticket.value.statusId === 1 &&
+      ticket.value.creatorId === userStore.user?.id),
 )
 const canComment = computed(
   () => currentRole.value === null || (!isReporter.value && !isTerminal.value),
@@ -87,8 +101,8 @@ const nextStatus = computed(() => {
 const nextStatusCode = computed(() => nextStatus.value?.code ?? null)
 const nextStatusLabel = computed(() => nextStatus.value?.label ?? '')
 
-// 正向推进按钮可见闸门：DRAFT 态不允许正向推进——草稿只能由 SUPERVISOR/ADMIN 通过“派单”进入 PENDING，
-// 若直接“推进至 待处理”会得到 status=PENDING 但 assignee 为空，导致被指派 HANDLER 看不到，流程断链。
+// 正向推进按钮可见闸门：DRAFT 态不允许正向推进——草稿只能由创建者本人主动“提交”进入 PENDING，
+// 保证提交后 PENDING 工单既有明确状态、又可在后续由主管“派单”指定处理人，流程不断链。
 const canAdvance = computed(
   () =>
     canProcess.value &&
@@ -194,6 +208,21 @@ const handleWithdraw = async () => {
   const res = await withdrawTicket(ticketId.value)
   if (res.code !== '200') return
   ElMessage.success('工单已撤回')
+  await loadTicket()
+}
+
+// 提交工单（创建者本人 / 管理员）：草稿转为待处理
+const handleSubmit = async () => {
+  try {
+    await ElMessageBox.confirm('确定提交该工单吗？提交后状态将变为待处理，可由主管派单处理。', '提示', {
+      type: 'warning',
+    })
+  } catch {
+    return
+  }
+  const res = await submitTicket(ticketId.value)
+  if (res.code !== '200') return
+  ElMessage.success('工单已提交')
   await loadTicket()
 }
 
@@ -351,6 +380,9 @@ onMounted(async () => {
       </el-button>
       <el-button v-if="canWithdraw" type="warning" @click="handleWithdraw">
         撤回工单
+      </el-button>
+      <el-button v-if="canSubmit" type="primary" @click="handleSubmit">
+        提交工单
       </el-button>
       <el-button v-if="canAssign" type="success" @click="openAssign">
         派单

@@ -330,6 +330,11 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
             return;
         }
 
+        // 草稿(DRAFT)只能由创建者主动"提交"推进到待处理(PENDING)，禁止通过状态接口直接推进
+        if (currentStatus == TicketStatusEnum.DRAFT && targetStatus == TicketStatusEnum.PENDING) {
+            throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "草稿工单需由创建者提交，禁止通过状态接口直接推进");
+        }
+
         // 角色 + 归属校验：仅处理人 / 主管 / 管理员可推进状态
         assertCanProcess(ticket);
 
@@ -391,6 +396,35 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    public TicketVO submitTicket(Long id, Long operatorId) {
+        Assert.notNull(id, "工单ID不能为空");
+        Tickets ticket = ticketMapper.selectById(id);
+        if (ticket == null) {
+            throw new BusinessException(ErrorCodeEnum.TICKET_NOT_FOUND);
+        }
+        TicketStatusEnum currentStatus = getStatusBySortOrder(ticket.getStatusId());
+        // 仅草稿(DRAFT)状态可提交
+        if (currentStatus != TicketStatusEnum.DRAFT) {
+            throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "仅草稿状态的工单可提交");
+        }
+        // 仅创建者本人 / 管理员可提交；调试期（未鉴权，role 为空）放行
+        String role = SecurityUtils.getCurrentRole();
+        Long uid = SecurityUtils.getCurrentUserId();
+        if (role != null && !"ADMIN".equals(role)) {
+            if (uid == null || ticket.getCreatorId() == null || !ticket.getCreatorId().equals(uid)) {
+                throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "仅创建者本人可提交工单");
+            }
+        }
+        ticket.setStatusId(TicketStatusEnum.PENDING.getSortOrder());
+        ticket.setUpdatedAt(LocalDateTime.now());
+        ticketMapper.updateById(ticket);
+        recordHistory(ticket.getId(), operatorId, TicketActionEnum.STATUS_CHANGE, "status",
+                currentStatus.name(), TicketStatusEnum.PENDING.name(), "创建者提交");
+        return convertToVO(ticket);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
     public void assignTicket(Long id, TicketAssignDTO dto, Long operatorId) {
         Assert.notNull(id, "工单ID不能为空");
         Assert.notNull(dto, "派单请求不能为空");
@@ -412,6 +446,10 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
         if (currentStatus.isTerminal()) {
             throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "已关闭/已取消的工单不可派单");
         }
+        // 草稿工单需由创建者先提交，不允许派单（解耦"派单=指定处理人"与"草稿→待处理"流转）
+        if (currentStatus == TicketStatusEnum.DRAFT) {
+            throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "草稿工单需由创建者先提交，暂不可派单");
+        }
 
         // 落分配记录：先将该工单的历史派单记录置为非当前，再插入当前派单（is_current=true）
         LambdaUpdateWrapper<TicketAssignments> uw = new LambdaUpdateWrapper<>();
@@ -427,12 +465,8 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
         assignment.setIsCurrent(true);
         ticketAssignmentMapper.insert(assignment);
 
-        // 更新工单：写入当前处理人 + 进入待处理(PENDING)；DRAFT/PENDING 派发后均置 PENDING，
-        // 已 PROCESSING 及以上则保持（由被指派 HANDLER 在详情页"接受处理"推进到 PROCESSING）
+        // 仅写入当前处理人，不改变工单状态：派单只负责"指定处理人"，状态流转由提交 / 接受处理等环节推进
         ticket.setCurrentAssigneeId(dto.getAssigneeId());
-        if (currentStatus == TicketStatusEnum.DRAFT || currentStatus == TicketStatusEnum.PENDING) {
-            ticket.setStatusId(TicketStatusEnum.PENDING.getSortOrder());
-        }
         // 优先级终审：支持侧在派单时确认/调整报障人申报的优先级（可选，不强制必填）
         if (dto.getPriorityId() != null) {
             assertPriorityExists(dto.getPriorityId().intValue());

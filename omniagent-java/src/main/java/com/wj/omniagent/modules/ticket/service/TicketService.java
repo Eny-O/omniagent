@@ -58,7 +58,12 @@ public interface TicketService extends IService<Tickets> {
     void withdrawTicket(Long id, Long operatorId);
 
     /**
-     * 派单（主管 / 管理员）：指定处理人并进入处理中
+     * 提交工单（创建者本人 / 管理员）：将草稿(DRAFT)提交为待处理(PENDING)。
+     */
+    TicketVO submitTicket(Long id, Long operatorId);
+
+    /**
+     * 派单（主管 / 管理员）：指定处理人；不再改变工单状态，状态流转由提交/接受处理等环节推进
      */
     void assignTicket(Long id, TicketAssignDTO dto, Long operatorId);
 
