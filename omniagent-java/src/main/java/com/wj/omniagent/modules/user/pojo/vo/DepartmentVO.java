@@ -24,6 +24,9 @@ public class DepartmentVO {
     @Schema(description = "上级部门ID")
     private Long parentId;
 
+    @Schema(description = "部门位置/地址")
+    private String location;
+
     @Schema(description = "排序号")
     private Integer sortOrder;
 

@@ -54,6 +54,7 @@ public class DepartmentServiceImpl extends ServiceImpl<DepartmentMapper, Departm
         department.setDeptCode(dto.getDeptCode().trim().toUpperCase());
         department.setDeptName(dto.getDeptName().trim());
         department.setParentId(dto.getParentId());
+        department.setLocation(dto.getLocation() == null ? null : dto.getLocation().trim());
         department.setSortOrder(dto.getSortOrder() == null ? 0 : dto.getSortOrder());
         department.setCreatedAt(LocalDateTime.now());
         department.setUpdatedAt(LocalDateTime.now());
@@ -140,6 +141,9 @@ public class DepartmentServiceImpl extends ServiceImpl<DepartmentMapper, Departm
         }
         if (dto.getParentId() != null) {
             department.setParentId(dto.getParentId());
+        }
+        if (StringUtils.hasText(dto.getLocation())) {
+            department.setLocation(dto.getLocation().trim());
         }
         if (dto.getSortOrder() != null) {
             department.setSortOrder(dto.getSortOrder());

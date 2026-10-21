@@ -25,6 +25,9 @@ public class DepartmentCreateDTO {
     @Schema(description = "上级部门ID", example = "1")
     private Long parentId;
 
+    @Schema(description = "部门位置/地址", example = "A栋3楼301")
+    private String location;
+
     @Schema(description = "排序号，默认0", example = "0")
     private Integer sortOrder;
 }
