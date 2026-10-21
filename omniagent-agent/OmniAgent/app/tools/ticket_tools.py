@@ -14,6 +14,7 @@ from typing import Optional, Union
 
 from langchain.tools import tool
 from langgraph.prebuilt import ToolRuntime
+from langgraph.types import interrupt
 
 from app.repositories import backend_client
 from app.services import dict_service
@@ -30,8 +31,20 @@ from app.schemas.ticket import (
     GetTicketHistorySchema,
     AddCommentSchema,
     ListCommentsSchema,
+    GetUserSchema,
+    GetDepartmentSchema,
+    ListDepartmentsSchema,
 )
 
+
+
+REQUIRED_TICKET_FIELDS: dict[str, str] = {
+    "title": "请用一句话概括故障标题（如：会议室投影仪无法开机）",
+    "description": "请补充故障现象、发生时间与影响范围",
+    "category": "请选择故障分类（如：硬件故障 / 软件问题 / 网络故障）",
+    "priority": "请申报紧急程度（低 / 中 / 高）",
+
+}
 
 def _acting(runtime: ToolRuntime) -> tuple:
     """从 ToolRuntime 的 config 读取当前请求的操作人身份。"""
@@ -301,3 +314,88 @@ async def list_ticket_comments(ticket_id: int, runtime: ToolRuntime = None) -> s
         return json.dumps(data, ensure_ascii=False)
     except backend_client.BackendError as e:
         return f"查询评论失败：{e}"
+
+@tool(args_schema=GetUserSchema)
+async def get_user(user_id: Optional[int] = None, runtime: ToolRuntime = None) -> str:
+    """查询用户联系方式与归属部门。建单时用于自动补全联系电话/邮箱。
+    不传 user_id 则查当前登录用户（操作人本人）。返回 JSON 含 realName/phone/email/deptId。"""
+    acting_user, acting_role = _acting(runtime)
+    uid = user_id if user_id is not None else acting_user
+    if uid is None:
+        return "无法确定要查询的用户：既未提供 user_id，当前也无登录用户上下文。"
+    try:
+        data = await backend_client.get_user_by_id(uid, acting_user=acting_user, acting_role=acting_role)
+        return json.dumps(data, ensure_ascii=False)
+    except backend_client.BackendError as e:
+        return f"查询用户失败：{e}"
+
+@tool(args_schema=GetDepartmentSchema)
+async def get_department(dept_id: int, runtime: ToolRuntime = None) -> str:
+    """查询部门详情（含部门地址 location）。建单时把部门地址默认带为工单位置；也可确认受理部门。"""
+    acting_user, acting_role = _acting(runtime)
+    try:
+        data = await backend_client.get_department_by_id(dept_id, acting_user=acting_user, acting_role=acting_role)
+        return json.dumps(data, ensure_ascii=False)
+    except backend_client.BackendError as e:
+        return f"查询部门失败：{e}"
+
+@tool(args_schema=ListDepartmentsSchema)
+async def list_departments(runtime: ToolRuntime = None) -> str:
+    """查询所有部门（树形），建单时选择或确认受理部门。"""
+    acting_user, acting_role = _acting(runtime)
+    try:
+        data = await backend_client.list_all_departments(acting_user=acting_user, acting_role=acting_role)
+        return json.dumps(data, ensure_ascii=False)
+    except backend_client.BackendError as e:
+        return f"查询部门列表失败：{e}"
+
+@tool(args_schema=CreateTicketSchema)
+async def create_ticket_draft(
+    title: str,
+    description: Optional[str] = None,
+    category: Optional[Union[int, str]] = None,
+    priority: Optional[Union[int, str]] = None,
+    source: Optional[str] = "AGENT",
+    contact_phone: Optional[str] = None,
+    contact_email: Optional[str] = None,
+    location: Optional[str] = None,
+    expected_resolve_at: Optional[str] = None,
+    dept_id: Optional[Union[int, str]] = None,
+    runtime: ToolRuntime = None,
+) -> str:
+    """（推荐）自动拟单并提交草稿：先由系统推断字段，再 human-in-the-loop 暂停请用户确认/修改，
+    确认后才真正创建工单。优先使用本工具，而非 create_ticket。"""
+    acting_user, acting_role = _acting(runtime)
+    category_id = await dict_service.resolve_category(category)
+    priority_id = await dict_service.resolve_priority(priority)
+    source_code = await dict_service.resolve_source(source) or "AGENT"
+
+    draft: dict = {"title": title, "source": source_code}
+    for k, v in {
+        "description": description, "categoryId": category_id, "priorityId": priority_id,
+        "deptId": (int(dept_id) if str(dept_id).isdigit() else dept_id) if dept_id is not None else None,
+        "contactPhone": contact_phone, "contactEmail": contact_email,
+        "location": location, "expectedResolveAt": expected_resolve_at,
+    }.items():
+        if v is not None:
+            draft[k] = v
+
+    # —— 人工确认打断 ——
+    decision = interrupt({
+        "type": "draft_review",
+        "draft": draft,
+        "message": "请确认以下工单草稿（回复「提交/确认」直接建单；需修改请直接说明要改的内容）：\n"
+                   + json.dumps(draft, ensure_ascii=False, indent=2),
+    })
+
+    # —— 恢复：decision 为用户的确认文本或文字修改意见 ——
+    if isinstance(decision, str) and decision.strip() in ("提交", "确认", "好的", "ok", "OK", "yes", "Yes", "确定"):
+        try:
+            data = await backend_client.create_ticket(draft, acting_user=acting_user, acting_role=acting_role)
+            return "工单已创建（草稿态）：" + json.dumps(data, ensure_ascii=False)
+        except backend_client.BackendError as e:
+            return f"创建工单失败：{e}"
+
+    return (f"用户希望对草稿做如下修改：{decision}。\n"
+            "请根据该修改意见调整对应字段后，再次调用 create_ticket_draft 提交，不要追问已明确的信息。")
+

@@ -106,3 +106,13 @@ class AddCommentSchema(BaseModel):
 
 class ListCommentsSchema(BaseModel):
     ticket_id: int = Field(..., description="工单ID")
+
+class GetUserSchema(BaseModel):
+    user_id: Optional[int] = Field(default=None, description="用户ID；不传则查当前登录用户（操作人本人）")
+
+class GetDepartmentSchema(BaseModel):
+    dept_id: int = Field(..., description="部门ID")
+
+class ListDepartmentsSchema(BaseModel):
+    pass
+

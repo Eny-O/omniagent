@@ -22,6 +22,10 @@ from app.tools.ticket_tools import (
     get_ticket_history,
     add_ticket_comment,
     list_ticket_comments,
+    get_user,
+    get_department,
+    list_departments,
+    create_ticket_draft
 )
 
 # 已注册工具列表（graph 装配时直接使用）
@@ -38,6 +42,10 @@ tools = [
     get_ticket_history,
     add_ticket_comment,
     list_ticket_comments,
+    get_user,
+    get_department,
+    list_departments,
+    create_ticket_draft,
 ]
 
 __all__ = ["tools"]

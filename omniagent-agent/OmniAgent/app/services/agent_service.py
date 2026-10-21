@@ -2,6 +2,7 @@
 from typing import TypedDict, Literal
 
 from langchain.chat_models import init_chat_model
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.constants import START, END
 from langgraph.graph import MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode
@@ -30,7 +31,7 @@ class OverAllState(MessagesState):
     acting_role: str | None = None
 
 
-class InputState(TypedDict):
+class InputState(MessagesState):
     user_input: str
     acting_user: int | None = None
     acting_role: str | None = None
@@ -41,11 +42,16 @@ class OutputState(TypedDict):
 
 
 def bootstrap_node(state: InputState) -> OverAllState:
+    existing = state.get("messages") or []
+    new_messages = []
+    # 同一 thread 的多轮对话：System 提示词只在首轮加一次
+    if not any(isinstance(m, SystemMessage) for m in existing):
+        new_messages.append(SystemMessage(build_system_prompt(state.get("acting_role", None))))
+    if state.get("user_input"):
+        new_messages.append(HumanMessage(state["user_input"]))
+
     return {
-        "messages": [
-            SystemMessage(build_system_prompt()),
-            HumanMessage(state["user_input"]),
-        ],
+        "messages": new_messages,
         "response": "",
         "user_input": state["user_input"],
         "acting_user": state.get("acting_user", None),
@@ -83,4 +89,4 @@ graph.add_conditional_edges(
 graph.add_edge("tool_node", "execute_node")
 graph.add_edge("finalize_node", END)
 
-agent = graph.compile()
+agent = graph.compile(checkpointer=MemorySaver())

@@ -248,3 +248,31 @@ async def list_ticket_comments(
     return await request(
         "GET", f"/api/tickets/{ticket_id}/comments", acting_user=acting_user, acting_role=acting_role
     )
+
+# ===== 用户 / 部门 =====
+
+async def get_user_by_id(
+    user_id: int,
+    *,
+    acting_user: int | None = None,
+    acting_role: str | None = None,
+) -> dict:
+    """查询用户详情 GET /api/users/{id}。返回 UserVO：realName/phone/email/deptId 等"""
+    return await request("GET", f"/api/users/{user_id}", acting_user=acting_user, acting_role=acting_role)
+
+async def get_department_by_id(
+    dept_id: int,
+    *,
+    acting_user: int | None = None,
+    acting_role: str | None = None,
+) -> dict:
+    """查询部门详情 GET /api/departments/{id}。返回 DepartmentVO：含 name/location（部门地址）"""
+    return await request("GET", f"/api/departments/{dept_id}", acting_user=acting_user, acting_role=acting_role)
+
+async def list_all_departments(
+    *,
+    acting_user: int | None = None,
+    acting_role: str | None = None,
+) -> list:
+    """查询全部部门 GET /api/departments/tree，返回 DepartmentVO 列表"""
+    return await request("GET", "/api/departments/tree", acting_user=acting_user, acting_role=acting_role)
