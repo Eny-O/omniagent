@@ -9,12 +9,33 @@ import {
   createTicket,
   updateTicket,
 } from '@/api/ticket'
+import { pageUsers } from '@/api/user'
+import type { UserPageVO } from '@/types/user'
 import { useDictStore } from '@/stores/dict'
 import { useUserStore } from '@/stores/user'
 import TicketFormDialog from './TicketFormDialog.vue'
 
 const router = useRouter()
 const userStore = useUserStore()
+
+// 用户字典（id -> 显示名），用于把处理人 ID 解析为真实姓名（与详情页 TicketDetailView 同款做法）
+const userMap = ref<Record<number, string>>({})
+const userName = (id: number | null) =>
+  id == null ? '-' : userMap.value[id] || `用户${id}`
+const loadUsers = async () => {
+  try {
+    const res = await pageUsers({ pageNum: 1, pageSize: 200 })
+    if (res.code === '200') {
+      const m: Record<number, string> = {}
+      res.data.records.forEach((u: UserPageVO) => {
+        m[u.id] = u.realName || u.username
+      })
+      userMap.value = m
+    }
+  } catch {
+    // 名称解析失败仅回退为展示 id，不影响主流程
+  }
+}
 
 // 前端权限闸门（真实鉴权在后端；调试期 currentRole 为 null 时按"放行"处理）
 const isAdmin = computed(() => userStore.currentRole === 'ADMIN')
@@ -179,6 +200,7 @@ const handleSubmit = async (formData: TicketForm) => {
 
 onMounted(async () => {
   await dictStore.loadDicts()
+  await loadUsers()
   loadData()
 })
 </script>
@@ -276,7 +298,7 @@ onMounted(async () => {
         </el-table-column>
         <el-table-column label="处理人" width="100">
           <template #default="{ row }">
-            {{ row.currentAssigneeId ? `用户${row.currentAssigneeId}` : '-' }}
+            {{ userName(row.currentAssigneeId) }}
           </template>
         </el-table-column>
         <el-table-column label="来源" width="80">

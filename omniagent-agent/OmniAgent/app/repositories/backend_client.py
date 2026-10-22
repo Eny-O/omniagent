@@ -288,3 +288,29 @@ async def list_all_departments(
 ) -> list:
     """查询全部部门 GET /api/departments/tree，返回 DepartmentVO 列表"""
     return await request("GET", "/api/departments/tree", acting_user=acting_user, acting_role=acting_role)
+
+
+async def page_users(
+    *,
+    dept_id: int | None = None,
+    role: str | None = None,
+    status: int | None = 1,
+    keyword: str | None = None,
+    page: int = 1,
+    page_size: int = 100,
+    acting_user: int | None = None,
+    acting_role: str | None = None,
+) -> dict:
+    """分页查询用户（GET /api/users/page）。技能路由枚举某部门处理人用：
+    可传 dept_id + role='HANDLER' + status=1。返回 PageResult{records,total}（无 pages 字段）。"""
+    params: dict = {"pageNum": page, "pageSize": page_size}
+    if dept_id is not None:
+        params["deptId"] = dept_id
+    if role is not None:
+        params["role"] = role
+    if status is not None:
+        params["status"] = status
+    if keyword:
+        params["keyword"] = keyword
+    return await request("GET", "/api/users/page", params=params,
+                         acting_user=acting_user, acting_role=acting_role)

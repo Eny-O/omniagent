@@ -25,7 +25,8 @@ from app.tools.ticket_tools import (
     get_user,
     get_department,
     list_departments,
-    create_ticket_draft
+    create_ticket_draft,
+    recommend_assignee
 )
 
 # 已注册工具列表（graph 装配时直接使用）
@@ -46,6 +47,7 @@ tools = [
     get_department,
     list_departments,
     create_ticket_draft,
+    recommend_assignee,
 ]
 
 __all__ = ["tools"]

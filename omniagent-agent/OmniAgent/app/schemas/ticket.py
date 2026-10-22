@@ -126,3 +126,7 @@ class GetDepartmentSchema(BaseModel):
 class ListDepartmentsSchema(BaseModel):
     pass
 
+
+class RecommendAssigneeSchema(BaseModel):
+    ticket_id: int = Field(..., description="工单ID（需已关联部门与分类，用于按部门+分类推荐处理人）")
+

@@ -36,6 +36,7 @@ from app.schemas.ticket import (
     GetUserSchema,
     GetDepartmentSchema,
     ListDepartmentsSchema,
+    RecommendAssigneeSchema,
 )
 
 
@@ -366,28 +367,23 @@ def _parse_dt(s) -> datetime | None:
         return None
 
 
-async def _fetch_all_tickets(acting_user, acting_role) -> list:
-    """分页拉取当前角色可见的全部工单（后端 DataScope 已按角色过滤）。page_size 上限 100。"""
+async def _fetch_all_tickets(acting_user, acting_role, category_id: Optional[int] = None) -> list:
+    """分页拉取当前角色可见的全部工单（后端 DataScope 已按角色过滤）。page_size 上限 100。
+    category_id 可选：仅拉该分类，缩小专长统计范围。"""
     all_records: list = []
     page, page_size, max_pages = 1, 100, 20
     while page <= max_pages:
         data = await backend_client.page_tickets(
+            category_id=category_id,
             page=page, page_size=page_size, acting_user=acting_user, acting_role=acting_role
         )
         if not isinstance(data, dict):
             break
         records = data.get("records") or []
         all_records.extend(records)
-        pages = data.get("pages")
-        total = data.get("total")
-        if pages is not None:
-            if page >= int(pages):
-                break
-        elif total is not None:
-            if page * page_size >= int(total):
-                break
-        else:
-            break  # 无分页元信息，拉一页即止
+        # 当前页返回条数不足一页（或为空）即说明已到末页，停止拉取（不依赖 total 字段）
+        if len(records) < page_size:
+            break
         page += 1
     return all_records
 
@@ -546,6 +542,80 @@ async def withdraw_ticket(ticket_id: int, runtime: ToolRuntime = None) -> str:
 
     return (f"用户希望改执行其他操作：{decision}。\n"
             "请根据该诉求调用相应工具，不要执行撤回。")
+
+
+@tool(args_schema=RecommendAssigneeSchema)
+async def recommend_assignee(ticket_id: int, runtime: ToolRuntime = None) -> str:
+    """派单前推荐最合适的处理人。当主管/管理员要派单但没想好派给谁时调用。
+    基于：① 该工单所属部门的处理人(HANDLER)候选池；② 该工单分类的历史处理专长；
+    ③ 各候选当前未闭环工单数(负载)。返回 Top-3 推荐 assigneeId 及姓名/专长分/负载，供派单确认时选择。"""
+    acting_user, acting_role = _acting(runtime)
+    if acting_role not in ("SUPERVISOR", "ADMIN"):
+        return "推荐处理人仅主管/管理员可用，当前角色无派单权限。"
+
+    # 取工单的部门与分类
+    try:
+        ticket = await backend_client.get_ticket(ticket_id, acting_user=acting_user, acting_role=acting_role)
+    except backend_client.BackendError as e:
+        return f"查询工单失败：{e}"
+    if not isinstance(ticket, dict):
+        return "未查询到该工单。"
+    dept_id = ticket.get("deptId")
+    category_id = ticket.get("categoryId")
+    if dept_id is None:
+        return "该工单未关联部门，无法按部门推荐处理人。"
+
+    # 候选处理人：本部门 + 启用 + 角色=HANDLER（阶段0已支持按 role 过滤）
+    handlers: list = []
+    page, page_size = 1, 100
+    while page <= 20:
+        data = await backend_client.page_users(
+            dept_id=dept_id, role="HANDLER", status=1,
+            page=page, page_size=page_size,
+            acting_user=acting_user, acting_role=acting_role,
+        )
+        if not isinstance(data, dict):
+            break
+        recs = data.get("records") or []
+        handlers.extend(recs)
+        # 当前页返回条数不足一页（或为空）即说明已到末页，停止拉取
+        if len(recs) < page_size:
+            break
+        page += 1
+    if not handlers:
+        return "该部门下暂无启用的处理人(HANDLER)，无法推荐，请先确认部门或手动派单。"
+    handler_ids = {u.get("id") for u in handlers}
+
+    # 历史专长 + 负载：该分类工单中，各处理人的已解决/已关闭计数 与 未闭环计数
+    hist = await _fetch_all_tickets(acting_user, acting_role, category_id=category_id)
+    expertise = {hid: 0 for hid in handler_ids}
+    load = {hid: 0 for hid in handler_ids}
+    for t in hist or []:
+        if acting_role == "ADMIN" and t.get("deptId") != dept_id:
+            continue  # ADMIN 可见全量，需按目标部门过滤；SUPERVISOR DataScope 已限本部门
+        aid = t.get("currentAssigneeId")
+        if aid not in handler_ids:
+            continue
+        st = t.get("statusId")
+        if st in (4, 5):            # RESOLVED / CLOSED → 专长
+            expertise[aid] += 1
+        if st in (2, 3):            # PENDING / PROCESSING → 负载
+            load[aid] += 1
+
+    # 排名：专长降序，同分负载升序，取 Top-3
+    ranked = sorted(handler_ids, key=lambda hid: (-expertise.get(hid, 0), load.get(hid, 0)))[:3]
+
+    # 组织结果（带姓名）
+    lines = ["【派单推荐】基于部门 / 分类专长 / 负载，建议优先派给："]
+    result = []
+    for rank, hid in enumerate(ranked, 1):
+        name = next((u.get("realName") or u.get("username") for u in handlers if u.get("id") == hid), hid)
+        exp = expertise.get(hid, 0)
+        ld = load.get(hid, 0)
+        lines.append(f"{rank}. 处理人「{name}」(id={hid})｜本分类已解决 {exp} 单｜当前未闭环 {ld} 单")
+        result.append({"assigneeId": hid, "realName": name, "expertise": exp, "openLoad": ld})
+    lines.append("可在派单确认中选择上述任一人，或说“你定”由系统取第 1 名。")
+    return "\n".join(lines) + "\n" + json.dumps(result, ensure_ascii=False)
 
 
 @tool(args_schema=AssignTicketSchema)

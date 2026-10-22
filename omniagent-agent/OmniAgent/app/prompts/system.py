@@ -59,6 +59,14 @@ _DEPT_SECTION = (
     "不要默认使用报障人本人所在部门；当多个部门都可能时，先向用户确认再定。"
 )
 
+_ROUTING_SECTION = (
+    "派单智能路由（技能路由）：当你作为主管(SUPERVISOR)或管理员(ADMIN)需要派单(assign_ticket)"
+    "但还没确定派给谁时，必须先调用 recommend_assignee(ticket_id) 获取 Top-3 推荐处理人"
+    "（基于：本部门 HANDLER 候选池、该工单分类的历史处理专长、各人当前未闭环工单数负载），"
+    "把推荐名单展示给用户，由用户在派单确认环节选择；若用户说“你定”，则取推荐第 1 名。"
+    "不要不经推荐就随机指定 assignee_id；也不要把工单派给非 HANDLER 角色的用户。"
+)
+
 _SAFETY_SECTION = (
     "安全与确认（重要）：以下操作属于不可逆或高影响，执行前你必须先向用户复述"
     "注意：最终权限由后端按角色强制；若工具返回权限相关错误，请如实告知用户其角色无此权限，"
@@ -87,5 +95,6 @@ def build_system_prompt(role: str | None = None) -> str:
         )
     parts.append(_role_section(role))
     parts.append(_DEPT_SECTION)
+    parts.append(_ROUTING_SECTION)
     parts.append(_SAFETY_SECTION)
     return "\n".join(parts)
