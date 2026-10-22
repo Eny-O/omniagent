@@ -102,6 +102,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, Users> implements U
         if (query.getStatus() != null) {
             wrapper.eq(Users::getStatus, query.getStatus());
         }
+        if (StringUtils.hasText(query.getRole())) {
+            wrapper.eq(Users::getRole, query.getRole());
+        }
         wrapper.orderByDesc(Users::getCreatedAt);
 
         Page<Users> usersPage = userMapper.selectPage(page, wrapper);

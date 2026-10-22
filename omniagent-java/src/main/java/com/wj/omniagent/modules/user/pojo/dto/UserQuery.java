@@ -21,4 +21,7 @@ public class UserQuery extends PageQuery {
 
     @Schema(description = "状态：1=启用，0=禁用", example = "1")
     private Integer status;
+
+    @Schema(description = "角色编码：REPORTER/HANDLER/SUPERVISOR/ADMIN（技能路由按部门筛处理人用）", example = "HANDLER")
+    private String role;
 }

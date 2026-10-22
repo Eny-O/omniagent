@@ -33,6 +33,9 @@ public class UserPageVO {
     @Schema(description = "状态：1=启用，0=禁用")
     private Integer status;
 
+    @Schema(description = "角色编码：REPORTER/HANDLER/SUPERVISOR/ADMIN")
+    private String role;
+
     @Schema(description = "创建时间")
     private LocalDateTime createdAt;
 
