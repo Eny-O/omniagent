@@ -78,6 +78,10 @@ class WithdrawTicketSchema(BaseModel):
     ticket_id: int = Field(..., description="工单ID")
 
 
+class SubmitTicketSchema(BaseModel):
+    ticket_id: int = Field(..., description="工单ID（须为 DRAFT 草稿态，且为创建者本人或 ADMIN 可提交）")
+
+
 class AssignTicketSchema(BaseModel):
     ticket_id: int = Field(..., description="工单ID")
     assignee_id: int = Field(..., description="被指派处理人ID（HANDLER 角色用户）")

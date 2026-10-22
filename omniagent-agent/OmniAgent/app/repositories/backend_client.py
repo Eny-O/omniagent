@@ -177,6 +177,18 @@ async def withdraw_ticket(
     )
 
 
+async def submit_ticket(
+    ticket_id: int,
+    *,
+    acting_user: int | None = None,
+    acting_role: str | None = None,
+) -> dict:
+    """提交工单（POST /api/tickets/{id}/submit）。草稿态由创建者本人/ADMIN 提交，DRAFT→PENDING。"""
+    return await request(
+        "POST", f"/api/tickets/{ticket_id}/submit", acting_user=acting_user, acting_role=acting_role
+    )
+
+
 async def assign_ticket(
     ticket_id: int,
     assignee_id: int,

@@ -25,6 +25,7 @@ from app.schemas.ticket import (
     UpdateTicketInfoSchema,
     DeleteTicketSchema,
     WithdrawTicketSchema,
+    SubmitTicketSchema,
     AssignTicketSchema,
     TransferDeptSchema,
     GetTicketHistorySchema,
@@ -313,6 +314,47 @@ async def update_ticket(
 
     return (f"用户希望对本次修改做如下调整：{decision}。\n"
             "请根据该调整意见重新组织变更字段后，再次调用 update_ticket，不要追问已明确的信息。")
+
+
+@tool(args_schema=SubmitTicketSchema)
+async def submit_ticket(ticket_id: int, runtime: ToolRuntime = None) -> str:
+    """提交工单。当草稿态工单（由创建者本人创建）需要正式提交、进入待处理时调用。
+    仅 DRAFT 草稿态 + 创建者本人/ADMIN 可提交（DRAFT→PENDING）。"""
+    acting_user, acting_role = _acting(runtime)
+
+    # 提交会使工单由草稿进入待处理，打断请用户确认（best-effort 带标题便于核对）
+    title = ""
+    try:
+        info = await backend_client.get_ticket(ticket_id, acting_user=acting_user, acting_role=acting_role)
+        if isinstance(info, dict):
+            title = info.get("title") or info.get("ticketNo") or ""
+    except Exception:
+        title = ""
+
+    decision = interrupt({
+        "type": "submit_review",
+        "ticket_id": ticket_id,
+        "message": (
+            f"即将提交工单 #{ticket_id}" + (f"（{title}）" if title else "")
+            + "，提交后将由草稿进入待处理（PENDING），由主管/处理人受理。\n"
+            + "- 点击「确认」按钮执行提交；\n"
+            + "- 点击「取消」按钮放弃本次提交；\n"
+            + "- 或在下方输入框填写其他要执行的操作。\n"
+        ),
+    })
+
+    action = _interpret_decision(decision)
+    if action == "confirm":
+        try:
+            data = await backend_client.submit_ticket(ticket_id, acting_user=acting_user, acting_role=acting_role)
+            return "工单已提交（待处理）。" if not data else json.dumps(data, ensure_ascii=False)
+        except backend_client.BackendError as e:
+            return f"提交工单失败：{e}"
+    if action == "cancel":
+        return "操作已取消，工单未提交。"
+
+    return (f"用户希望改执行其他操作：{decision}。\n"
+            "请根据该诉求调用相应工具，不要执行提交。")
 
 
 @tool(args_schema=WithdrawTicketSchema)
