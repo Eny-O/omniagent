@@ -25,6 +25,9 @@ async def _ensure_loaded() -> None:
     if _cache["categories"] is None:
         await load_dicts()
 
+async def ensure_loaded() -> None:
+    if _cache["categories"] is None:
+        await load_dicts()
 
 async def resolve_category_id(label: str) -> int | None:
     """分类标签 -> id（如 '硬件故障' -> 1）。精确匹配。"""
@@ -106,6 +109,30 @@ async def resolve_source(code) -> str | None:
 
 def category_options() -> list:
     return _cache["categories"] or []
+
+
+def category_label(value) -> str | None:
+    """分类 id -> 中文标签（如 1 -> '硬件故障'）。未命中返回 None。"""
+    for i in _cache["categories"] or []:
+        if i.get("value") == value:
+            return i.get("label")
+    return None
+
+
+def priority_label(value) -> str | None:
+    """优先级 id -> 中文标签（如 3 -> '高'）。未命中返回 None。"""
+    for i in _cache["priorities"] or []:
+        if i.get("value") == value:
+            return i.get("label")
+    return None
+
+
+def source_label(code) -> str | None:
+    """来源编码 -> 中文标签（如 'AGENT' -> '智能助手'）。未命中返回 None。"""
+    for i in _cache["sources"] or []:
+        if i.get("value") == code:
+            return i.get("label")
+    return None
 
 
 def priority_options() -> list:

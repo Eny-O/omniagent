@@ -9,6 +9,7 @@ from langgraph.prebuilt import ToolNode
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.core.config import settings
+from app.services import dict_service
 from app.tools import tools
 from app.prompts import build_system_prompt
 
@@ -44,7 +45,11 @@ class OutputState(TypedDict):
     response: str
 
 
-def bootstrap_node(state: InputState) -> OverAllState:
+async def bootstrap_node(state: InputState) -> OverAllState:
+    try:
+        await dict_service.ensure_loaded()
+    except Exception as e:
+        print(f"[warn] bootstrap 预热字典失败（Java 未启动？）：{e}")
     existing = state.get("messages") or []
     new_messages = []
     # 同一 thread 的多轮对话：System 提示词只在首轮加一次

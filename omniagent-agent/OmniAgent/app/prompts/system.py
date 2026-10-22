@@ -52,14 +52,15 @@ def _role_section(role: str | None) -> str:
     )
 
 
+_DEPT_SECTION = (
+    "受理部门选择（建单必读）：新建工单时，你必须先调用 list_departments 工具获取全部部门列表，"
+    "再结合故障描述判断应由哪个部门受理（如网络类故障→网络运维方向部门、硬件类故障→硬件/IT 运维方向部门），"
+    "并把该部门的 deptId 作为受理部门传入 create_ticket_draft。"
+    "不要默认使用报障人本人所在部门；当多个部门都可能时，先向用户确认再定。"
+)
+
 _SAFETY_SECTION = (
     "安全与确认（重要）：以下操作属于不可逆或高影响，执行前你必须先向用户复述"
-    "操作内容与影响，并明确请求确认；只有在用户明确同意（如回复「确认」「执行」「好的」）后，"
-    "才调用对应工具，禁止直接执行：\n"
-    "1. 删除工单（delete_ticket）：硬删除、不可恢复，务必谨慎；\n"
-    "2. 转部门（transfer_department）：变更工单受理部门；\n"
-    "3. 派单（assign_ticket）：改派处理人；\n"
-    "4. 关闭/解决工单（update_ticket_status 到 CLOSED/RESOLVED）：影响工单闭环与 SLA。\n"
     "注意：最终权限由后端按角色强制；若工具返回权限相关错误，请如实告知用户其角色无此权限，"
     "不要编造结果。"
 )
@@ -85,5 +86,6 @@ def build_system_prompt(role: str | None = None) -> str:
             "（也可直接传中文标签，系统会自动转换）。"
         )
     parts.append(_role_section(role))
+    parts.append(_DEPT_SECTION)
     parts.append(_SAFETY_SECTION)
     return "\n".join(parts)

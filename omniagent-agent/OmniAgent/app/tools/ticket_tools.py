@@ -22,7 +22,6 @@ from app.schemas.ticket import (
     QueryTicketSchema,
     CreateTicketSchema,
     GetTicketSchema,
-    UpdateTicketStatusSchema,
     UpdateTicketInfoSchema,
     DeleteTicketSchema,
     WithdrawTicketSchema,
@@ -77,6 +76,85 @@ def _acting(runtime: ToolRuntime) -> tuple:
     return user_id, role
 
 
+# 其余草稿字段的中文键名（给人看的展示用）
+_KEY_LABELS: dict[str, str] = {
+    "title": "标题",
+    "description": "故障描述",
+    "contactPhone": "联系电话",
+    "contactEmail": "联系邮箱",
+    "location": "位置",
+    "expectedResolveAt": "期望解决时间",
+}
+
+
+async def _dept_name(dept_id, acting_user=None, acting_role=None) -> str | None:
+    """部门 id -> 部门名（仅用于给人看的草稿展示）。取不到时返回 None。"""
+    try:
+        data = await backend_client.get_department_by_id(
+            int(dept_id), acting_user=acting_user, acting_role=acting_role
+        )
+        if isinstance(data, dict):
+            # DepartmentVO 的部门名字段是 deptName（兼容 name）
+            return data.get("deptName") or data.get("name")
+        return None
+    except Exception:
+        return None
+
+
+async def _user_name(user_id, acting_user=None, acting_role=None) -> str | None:
+    """用户 id -> 姓名（realName / username，仅用于给人看的展示）。取不到时返回 None。"""
+    try:
+        data = await backend_client.get_user_by_id(
+            int(user_id), acting_user=acting_user, acting_role=acting_role
+        )
+        if isinstance(data, dict):
+            return data.get("realName") or data.get("username")
+        return None
+    except Exception:
+        return None
+
+
+async def _human_draft(draft: dict, acting_user=None, acting_role=None) -> dict:
+    """把后台用的数字草稿转成全中文给人看的版本：
+    分类/优先级/受理部门/来源转中文值，其余键名也统一转中文。
+    返回新 dict，不修改入参。
+    """
+    display: dict = {}
+    for k, v in draft.items():
+        if v is None:
+            continue
+        if k == "categoryId":
+            label = dict_service.category_label(v)
+            display["分类"] = label if label is not None else v
+        elif k == "priorityId":
+            label = dict_service.priority_label(v)
+            display["优先级"] = label if label is not None else v
+        elif k == "deptId":
+            name = await _dept_name(v, acting_user=acting_user, acting_role=acting_role)
+            display["受理部门"] = name if name is not None else v
+        elif k == "source":
+            label = dict_service.source_label(v)
+            display["来源"] = label if label is not None else v
+        else:
+            display[_KEY_LABELS.get(k, k)] = v
+    return display
+
+
+def _interpret_decision(decision) -> str:
+    """前端打断交互的三态判定：
+    - 确认按钮 -> 'yes'  -> 'confirm'（执行建单/改单）
+    - 取消按钮 -> 'no'   -> 'cancel'（直接结束，不做任何操作）
+    - 其他操作输入框（自由文本）-> 'modify'（视为修改意见，交回 LLM 重新组织后再调用）
+    """
+    if not isinstance(decision, str):
+        return "modify"
+    d = decision.strip().lower()
+    if d == "yes":
+        return "confirm"
+    if d == "no":
+        return "cancel"
+    return "modify"
+
 
 @tool(args_schema=QueryTicketSchema)
 async def query_tickets(
@@ -125,36 +203,47 @@ async def get_ticket(ticket_id: int, runtime: ToolRuntime = None) -> str:
         return f"查询工单详情失败：{e}"
 
 
-@tool(args_schema=UpdateTicketStatusSchema)
-async def update_ticket_status(
-    ticket_id: int,
-    target_status_code: str,
-    remark: Optional[str] = None,
-    runtime: ToolRuntime = None,
-) -> str:
-    """更新工单状态。当用户要求改变工单状态（如'标记为处理中'、'关闭工单'）时调用。
-    target_status_code 用状态编码：DRAFT/PENDING/PROCESSING/RESOLVED/CLOSED。"""
-    acting_user, acting_role = _acting(runtime)
-    try:
-        data = await backend_client.update_ticket_status(
-            ticket_id, target_status_code, remark, acting_user=acting_user, acting_role=acting_role
-        )
-        return "工单状态已更新。" if not data else json.dumps(data, ensure_ascii=False)
-    except backend_client.BackendError as e:
-        return f"更新工单状态失败：{e}"
-
-
 @tool(args_schema=DeleteTicketSchema)
 async def delete_ticket(ticket_id: int, runtime: ToolRuntime = None) -> str:
-    """删除工单。当用户明确要求删除某个工单时调用。该操作为硬删除，仅管理员(ADMIN)可执行。"""
+    """删除工单。当用户明确要求删除某个工单时调用。该操作为硬删除，不可恢复，仅管理员(ADMIN)可执行。"""
     acting_user, acting_role = _acting(runtime)
     if acting_role != "ADMIN":
         return "❌ 删除工单为管理员专属操作，当前角色无权限。"
+
+    # 删除为不可逆高危操作，打断请用户确认（尽量带上工单标题便于核对）
+    title = ""
     try:
-        await backend_client.delete_ticket(ticket_id, acting_user=acting_user, acting_role=acting_role)
-        return f"工单 {ticket_id} 已删除。"
-    except backend_client.BackendError as e:
-        return f"删除工单失败：{e}"
+        info = await backend_client.get_ticket(ticket_id, acting_user=acting_user, acting_role=acting_role)
+        if isinstance(info, dict):
+            title = info.get("title") or info.get("ticketNo") or ""
+    except Exception:
+        title = ""
+
+    decision = interrupt({
+        "type": "delete_review",
+        "ticket_id": ticket_id,
+        "message": (
+            f"即将【硬删除】工单 #{ticket_id}"
+            + (f"（{title}）" if title else "")
+            + "，此操作不可恢复。\n"
+            + "- 点击「确认」按钮执行删除；\n"
+            + "- 点击「取消」按钮放弃本次删除；\n"
+            + "- 或在下方输入框填写其他要执行的操作。\n"
+        ),
+    })
+
+    action = _interpret_decision(decision)
+    if action == "confirm":
+        try:
+            await backend_client.delete_ticket(ticket_id, acting_user=acting_user, acting_role=acting_role)
+            return f"工单 {ticket_id} 已删除。"
+        except backend_client.BackendError as e:
+            return f"删除工单失败：{e}"
+    if action == "cancel":
+        return "操作已取消，工单未被删除。"
+
+    return (f"用户希望改执行其他操作：{decision}。\n"
+            "请根据该诉求调用相应工具，不要执行删除。")
 
 
 @tool(args_schema=UpdateTicketInfoSchema)
@@ -197,22 +286,73 @@ async def update_ticket(
         payload["location"] = location
     if expected_resolve_at is not None:
         payload["expectedResolveAt"] = expected_resolve_at
-    try:
-        data = await backend_client.update_ticket(ticket_id, payload, acting_user=acting_user, acting_role=acting_role)
-        return "工单信息已更新。" if not data else json.dumps(data, ensure_ascii=False)
-    except backend_client.BackendError as e:
-        return f"更新工单信息失败：{e}"
+
+    # —— 人工确认打断（展示中文修改项，便于用户核对；只改用户指定的字段）——
+    human = await _human_draft(payload, acting_user=acting_user, acting_role=acting_role)
+    decision = interrupt({
+        "type": "update_review",
+        "ticket_id": ticket_id,
+        "changes": payload,         # 后台实际使用的数字变更（技术视角）
+        "human_changes": human,     # 给人看的中文变更
+        "message": f"即将修改工单 #{ticket_id}，请确认以下变更项：\n"
+                   f"- 点击「确认」按钮执行修改；\n"
+                   f"- 点击「取消」按钮放弃本次修改；\n"
+                   f"- 或在下方输入框填写要调整的内容。\n"
+                   + json.dumps(human, ensure_ascii=False, indent=2),
+    })
+
+    action = _interpret_decision(decision)
+    if action == "confirm":
+        try:
+            data = await backend_client.update_ticket(ticket_id, payload, acting_user=acting_user, acting_role=acting_role)
+            return "工单信息已更新。" if not data else json.dumps(data, ensure_ascii=False)
+        except backend_client.BackendError as e:
+            return f"更新工单信息失败：{e}"
+    if action == "cancel":
+        return "操作已取消，工单未做任何修改。"
+
+    return (f"用户希望对本次修改做如下调整：{decision}。\n"
+            "请根据该调整意见重新组织变更字段后，再次调用 update_ticket，不要追问已明确的信息。")
 
 
 @tool(args_schema=WithdrawTicketSchema)
 async def withdraw_ticket(ticket_id: int, runtime: ToolRuntime = None) -> str:
     """撤回工单。当用户（报障人）希望撤销自己创建、尚未被处理的工单时调用。撤回后工单进入 CANCELLED 终态。"""
     acting_user, acting_role = _acting(runtime)
+
+    # 撤回会使工单进入 CANCELLED 终态，打断请用户确认（best-effort 带标题便于核对）
+    title = ""
     try:
-        data = await backend_client.withdraw_ticket(ticket_id, acting_user=acting_user, acting_role=acting_role)
-        return "工单已撤回。" if not data else json.dumps(data, ensure_ascii=False)
-    except backend_client.BackendError as e:
-        return f"撤回工单失败：{e}"
+        info = await backend_client.get_ticket(ticket_id, acting_user=acting_user, acting_role=acting_role)
+        if isinstance(info, dict):
+            title = info.get("title") or info.get("ticketNo") or ""
+    except Exception:
+        title = ""
+
+    decision = interrupt({
+        "type": "withdraw_review",
+        "ticket_id": ticket_id,
+        "message": (
+            f"即将撤回工单 #{ticket_id}" + (f"（{title}）" if title else "")
+            + "，撤回后工单将进入 CANCELLED 终态，不可再处理。\n"
+            + "- 点击「确认」按钮执行撤回；\n"
+            + "- 点击「取消」按钮放弃本次撤回；\n"
+            + "- 或在下方输入框填写其他要执行的操作。\n"
+        ),
+    })
+
+    action = _interpret_decision(decision)
+    if action == "confirm":
+        try:
+            data = await backend_client.withdraw_ticket(ticket_id, acting_user=acting_user, acting_role=acting_role)
+            return "工单已撤回。" if not data else json.dumps(data, ensure_ascii=False)
+        except backend_client.BackendError as e:
+            return f"撤回工单失败：{e}"
+    if action == "cancel":
+        return "操作已取消，工单未撤回。"
+
+    return (f"用户希望改执行其他操作：{decision}。\n"
+            "请根据该诉求调用相应工具，不要执行撤回。")
 
 
 @tool(args_schema=AssignTicketSchema)
@@ -227,28 +367,79 @@ async def assign_ticket(
     可同时做优先级终审：priority_id 可传中文标签(如'高')或数字 id，不传则沿用报障人申报的优先级。"""
     acting_user, acting_role = _acting(runtime)
     priority_resolved = await dict_service.resolve_priority(priority_id) if priority_id is not None else None
-    try:
-        data = await backend_client.assign_ticket(
-            ticket_id, assignee_id,
-            priority_id=priority_resolved, remark=remark,
-            acting_user=acting_user, acting_role=acting_role,
-        )
-        return "工单已派单。" if not data else json.dumps(data, ensure_ascii=False)
-    except backend_client.BackendError as e:
-        return f"派单失败：{e}"
+
+    # 派单为高影响操作，打断请用户确认（best-effort 带处理人姓名便于核对）
+    assignee_name = await _user_name(assignee_id, acting_user=acting_user, acting_role=acting_role)
+    priority_tip = ""
+    if priority_resolved is not None:
+        label = dict_service.priority_label(priority_resolved)
+        priority_tip = f"，优先级终审为「{label or priority_resolved}」"
+    decision = interrupt({
+        "type": "assign_review",
+        "ticket_id": ticket_id,
+        "assignee_id": assignee_id,
+        "priority_id": priority_resolved,
+        "remark": remark,
+        "message": (
+            f"即将派单：工单 #{ticket_id} 指派给处理人「{assignee_name or assignee_id}」{priority_tip}。"
+            + (f"\n备注：{remark}" if remark else "") + "\n"
+            + "- 点击「确认」按钮执行派单；\n"
+            + "- 点击「取消」按钮放弃本次派单；\n"
+            + "- 或在下方输入框填写其他要执行的操作。\n"
+        ),
+    })
+
+    action = _interpret_decision(decision)
+    if action == "confirm":
+        try:
+            data = await backend_client.assign_ticket(
+                ticket_id, assignee_id,
+                priority_id=priority_resolved, remark=remark,
+                acting_user=acting_user, acting_role=acting_role,
+            )
+            return "工单已派单。" if not data else json.dumps(data, ensure_ascii=False)
+        except backend_client.BackendError as e:
+            return f"派单失败：{e}"
+    if action == "cancel":
+        return "操作已取消，工单未派单。"
+
+    return (f"用户希望改执行其他操作：{decision}。\n"
+            "请根据该诉求调用相应工具，不要执行派单。")
 
 
 @tool(args_schema=TransferDeptSchema)
 async def transfer_department(ticket_id: int, new_dept_id: int, runtime: ToolRuntime = None) -> str:
     """转部门。当主管/管理员需要将工单的受理部门变更到另一部门时调用（如该故障应由其他部门处理）。"""
     acting_user, acting_role = _acting(runtime)
-    try:
-        data = await backend_client.transfer_department(
-            ticket_id, new_dept_id, acting_user=acting_user, acting_role=acting_role
-        )
-        return "工单已转部门。" if not data else json.dumps(data, ensure_ascii=False)
-    except backend_client.BackendError as e:
-        return f"转部门失败：{e}"
+
+    # 转部门为高影响操作，打断请用户确认（best-effort 带部门名便于核对）
+    new_dept_name = await _dept_name(new_dept_id, acting_user=acting_user, acting_role=acting_role)
+    decision = interrupt({
+        "type": "transfer_review",
+        "ticket_id": ticket_id,
+        "new_dept_id": new_dept_id,
+        "message": (
+            f"即将把工单 #{ticket_id} 的受理部门转至「{new_dept_name or new_dept_id}」。\n"
+            f"- 点击「确认」按钮执行转部门；\n"
+            f"- 点击「取消」按钮放弃本次转部门；\n"
+            f"- 或在下方输入框填写其他要执行的操作。\n"
+        ),
+    })
+
+    action = _interpret_decision(decision)
+    if action == "confirm":
+        try:
+            data = await backend_client.transfer_department(
+                ticket_id, new_dept_id, acting_user=acting_user, acting_role=acting_role
+            )
+            return "工单已转部门。" if not data else json.dumps(data, ensure_ascii=False)
+        except backend_client.BackendError as e:
+            return f"转部门失败：{e}"
+    if action == "cancel":
+        return "操作已取消，工单未转部门。"
+
+    return (f"用户希望改执行其他操作：{decision}。\n"
+            "请根据该诉求调用相应工具，不要执行转部门。")
 
 
 @tool(args_schema=GetTicketHistorySchema)
@@ -361,21 +552,29 @@ async def create_ticket_draft(
         if v is not None:
             draft[k] = v
 
-    # —— 人工确认打断 ——
+    # —— 人工确认打断（展示中文草稿，便于用户核对）——
+    human = await _human_draft(draft, acting_user=acting_user, acting_role=acting_role)
     decision = interrupt({
         "type": "draft_review",
-        "draft": draft,
-        "message": "请确认以下工单草稿（回复「提交/确认」直接建单；需修改请直接说明要改的内容）：\n"
-                   + json.dumps(draft, ensure_ascii=False, indent=2),
+        "draft": draft,            # 后台实际使用的数字草稿（技术视角）
+        "human_draft": human,      # 给人看的中文草稿
+        "message": "请确认以下工单草稿：\n"
+                   "- 点击「确认」按钮直接建单；\n"
+                   "- 点击「取消」按钮放弃本次创建；\n"
+                   "- 或在下方输入框填写要修改的内容（将据此调整后再建单）。\n"
+                   + json.dumps(human, ensure_ascii=False, indent=2),
     })
 
-    # —— 恢复：decision 为用户的确认文本或文字修改意见 ——
-    if isinstance(decision, str) and decision.strip() in ("提交", "确认", "好的", "ok", "OK", "yes", "Yes", "确定"):
+    # —— 恢复：按前端三态判定执行 ——
+    action = _interpret_decision(decision)
+    if action == "confirm":
         try:
             data = await backend_client.create_ticket(draft, acting_user=acting_user, acting_role=acting_role)
             return "工单已创建（草稿态）：" + json.dumps(data, ensure_ascii=False)
         except backend_client.BackendError as e:
             return f"创建工单失败：{e}"
+    if action == "cancel":
+        return "操作已取消，工单未创建。"
 
     return (f"用户希望对草稿做如下修改：{decision}。\n"
             "请根据该修改意见调整对应字段后，再次调用 create_ticket_draft 提交，不要追问已明确的信息。")
