@@ -11,7 +11,6 @@
 """
 from app.tools.ticket_tools import (
     query_tickets,
-    create_ticket,
     get_ticket,
     update_ticket_status,
     update_ticket,
@@ -31,7 +30,6 @@ from app.tools.ticket_tools import (
 # 已注册工具列表（graph 装配时直接使用）
 tools = [
     query_tickets,
-    create_ticket,
     get_ticket,
     update_ticket_status,
     update_ticket,

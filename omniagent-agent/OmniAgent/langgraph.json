@@ -1,0 +1,17 @@
+{
+  "dependencies": [
+    "langgraph",
+    "langchain",
+    "langchain-core",
+    "langchain-deepseek",
+    "langgraph-checkpoint",
+    "langgraph-prebuilt",
+    "httpx",
+    "pydantic",
+    "pydantic-settings"
+  ],
+  "graphs": {
+    "omniagent": "./app/services/agent_service.py:graph"
+  },
+  "env": ".env"
+}

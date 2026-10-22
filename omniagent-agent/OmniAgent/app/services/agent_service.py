@@ -12,6 +12,9 @@ from app.core.config import settings
 from app.tools import tools
 from app.prompts import build_system_prompt
 
+from langgraph.config import get_config
+from app.tools.ticket_tools import _identity_by_thread
+
 llm = init_chat_model(
     model="deepseek:deepseek-v4-flash",
     api_key=settings.deepseek_api_key,
@@ -49,6 +52,11 @@ def bootstrap_node(state: InputState) -> OverAllState:
         new_messages.append(SystemMessage(build_system_prompt(state.get("acting_role", None))))
     if state.get("user_input"):
         new_messages.append(HumanMessage(state["user_input"]))
+    acting_user = state.get("acting_user", None)
+    acting_role = state.get("acting_role", None)
+    _tid = (get_config() or {}).get("configurable", {}).get("thread_id")
+    if _tid is not None:
+        _identity_by_thread[_tid] = (acting_user, acting_role)
 
     return {
         "messages": new_messages,

@@ -50,7 +50,6 @@ import org.springframework.security.core.Authentication;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
-
 import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.List;
@@ -119,20 +118,17 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
         ticket.setCreatedAt(LocalDateTime.now());
         ticket.setUpdatedAt(LocalDateTime.now());
 
-        // 生成工单号，数据库唯一索引 + 重试保证唯一性
-        int retry = 0;
-        while (retry < 3) {
-            ticket.setTicketNo(ticketNoGenerator.generate());
-            try {
-                ticketMapper.insert(ticket);
-                break;
-            } catch (DuplicateKeyException e) {
-                log.warn("工单号重复，重新生成，ticketNo={}", ticket.getTicketNo());
-                retry++;
-                if (retry >= 3) {
-                    throw new BusinessException(ErrorCodeEnum.TICKET_GENER_FAILED_RETRY);
-                }
-            }
+        // 生成工单号：序号由 PostgreSQL 序列 ticket_no_seq 的 nextval 原子提供，
+        // 并发插入不会重复；ticket_no 唯一索引作为最终兜底。
+        // 若极端情况下仍撞号（理论上不会），直接快速失败，交由调用方整单重发，
+        // 而非盲目重试（避免事务中止级联掩盖真实错误）。
+        ticket.setTicketNo(ticketNoGenerator.generate());
+        try {
+            ticketMapper.insert(ticket);
+        } catch (DuplicateKeyException e) {
+            log.error("工单号插入冲突（序列应保证唯一，疑似数据异常）：ticketNo={}", ticket.getTicketNo(), e);
+            throw new BusinessException(ErrorCodeEnum.TICKET_INSERT_CONFLICT,
+                    "工单号生成冲突，请稍后重试或联系管理员");
         }
 
         recordHistory(ticket.getId(), operatorId, TicketActionEnum.CREATE, null, null, null,
@@ -629,8 +625,7 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
         recordFieldChange(ticketId, operatorId, "expected_resolve_at", before.getExpectedResolveAt(), after.getExpectedResolveAt());
     }
 
-    private TicketStatusEnum getStatusBySortOrder(Integer statusId) {
-        if (statusId == null) {
+    private TicketStatusEnum getStatusBySortOrder(Integer statusId) {        if (statusId == null) {
             return TicketStatusEnum.DRAFT;
         }
         return Arrays.stream(TicketStatusEnum.values())

@@ -45,11 +45,37 @@ REQUIRED_TICKET_FIELDS: dict[str, str] = {
     "priority": "请申报紧急程度（低 / 中 / 高）",
 
 }
-
+_identity_by_thread: dict = {}
 def _acting(runtime: ToolRuntime) -> tuple:
-    """从 ToolRuntime 的 config 读取当前请求的操作人身份。"""
-    cfg = (runtime.config or {}).get("configurable", {})
-    return cfg.get("acting_user"), cfg.get("acting_role")
+    """读取操作人身份，三级回退：
+    1) FastAPI 通道：runtime.config.configurable
+    2) Studio 首跑：runtime.state（dict）
+    3) Studio/平台 resume（runtime=None）：get_config().configurable 取 thread_id → 查缓存
+    """
+    user_id = role = None
+    if runtime is not None:
+        cfg = (runtime.config or {}).get("configurable", {})
+        user_id, role = cfg.get("acting_user"), cfg.get("acting_role")
+        if user_id is None or role is None:
+            st = runtime.state
+            vals = st if isinstance(st, dict) else getattr(st, "values", None) or {}
+            user_id = user_id if user_id is not None else vals.get("acting_user")
+            role = role if role is not None else vals.get("acting_role")
+    if user_id is None or role is None:
+        try:
+            from langgraph.config import get_config
+            cc = (get_config() or {}).get("configurable", {})
+            user_id = user_id if user_id is not None else cc.get("acting_user")
+            role = role if role is not None else cc.get("acting_role")
+            if (user_id is None or role is None) and cc.get("thread_id"):
+                cached = _identity_by_thread.get(cc["thread_id"])
+                if cached:
+                    user_id = user_id if user_id is not None else cached[0]
+                    role = role if role is not None else cached[1]
+        except Exception:
+            pass
+    return user_id, role
+
 
 
 @tool(args_schema=QueryTicketSchema)
@@ -86,51 +112,6 @@ async def query_tickets(
         return json.dumps(records, ensure_ascii=False)
     except backend_client.BackendError as e:
         return f"查询工单列表失败：{e}"
-
-
-@tool(args_schema=CreateTicketSchema)
-async def create_ticket(
-    title: str,
-    description: Optional[str] = None,
-    category: Optional[Union[int, str]] = None,
-    priority: Optional[Union[int, str]] = None,
-    source: Optional[str] = "AGENT",
-    contact_phone: Optional[str] = None,
-    contact_email: Optional[str] = None,
-    location: Optional[str] = None,
-    expected_resolve_at: Optional[str] = None,
-    dept_id: Optional[Union[int, str]] = None,
-    runtime: ToolRuntime = None,
-) -> str:
-    """创建工单。当用户描述了一个故障/需求并希望新建工单时调用。
-    分类/优先级可传中文标签（如'硬件故障'/'高'）或数字 id，由 dict_service 归一化。"""
-    acting_user, acting_role = _acting(runtime)
-    # 归一化：分类/优先级中文标签或数字 id -> Java 需要的整数 id；来源校验合法编码（复用预热缓存，无额外网络请求）
-    category_id = await dict_service.resolve_category(category)
-    priority_id = await dict_service.resolve_priority(priority)
-    source_code = await dict_service.resolve_source(source) or "AGENT"
-    payload: dict = {"title": title, "source": source_code}
-    if description is not None:
-        payload["description"] = description
-    if category_id is not None:
-        payload["categoryId"] = category_id
-    if priority_id is not None:
-        payload["priorityId"] = priority_id
-    if dept_id is not None:
-        payload["deptId"] = int(dept_id) if str(dept_id).isdigit() else dept_id
-    if contact_phone is not None:
-        payload["contactPhone"] = contact_phone
-    if contact_email is not None:
-        payload["contactEmail"] = contact_email
-    if location is not None:
-        payload["location"] = location
-    if expected_resolve_at is not None:
-        payload["expectedResolveAt"] = expected_resolve_at
-    try:
-        data = await backend_client.create_ticket(payload, acting_user=acting_user, acting_role=acting_role)
-        return json.dumps(data, ensure_ascii=False)
-    except backend_client.BackendError as e:
-        return f"创建工单失败：{e}"
 
 
 @tool(args_schema=GetTicketSchema)
@@ -363,8 +344,8 @@ async def create_ticket_draft(
     dept_id: Optional[Union[int, str]] = None,
     runtime: ToolRuntime = None,
 ) -> str:
-    """（推荐）自动拟单并提交草稿：先由系统推断字段，再 human-in-the-loop 暂停请用户确认/修改，
-    确认后才真正创建工单。优先使用本工具，而非 create_ticket。"""
+    """创建工单：先由系统推断字段，再 human-in-the-loop 暂停请用户确认/修改，
+    确认后才真正创建工单。所有建单都应通过本工具，以保证人工确认环节。"""
     acting_user, acting_role = _acting(runtime)
     category_id = await dict_service.resolve_category(category)
     priority_id = await dict_service.resolve_priority(priority)

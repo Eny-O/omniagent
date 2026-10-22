@@ -30,7 +30,6 @@ public enum ErrorCodeEnum {
     ROLE_INVALID("1009", "用户角色非法或未知"),
 
     // 工单错误码
-    TICKET_GENER_FAILED_RETRY("2000", "工单号生成失败，请重试"),
     TICKET_NOT_FOUND("2001", "工单不存在"),
     TICKET_STATUS_NOT_FOUND("2002", "工单目标状态不存在"),
     TICKET_STATUS_INVALID_TRANSITION("2003", "工单状态流转不合法"),
@@ -41,6 +40,7 @@ public enum ErrorCodeEnum {
     TICKET_SOURCE_NOT_FOUND("2008", "工单来源不存在"),
     TICKET_NO_PERMISSION("2009", "无权访问或操作该工单"),
     ASSIGNEE_NOT_FOUND("2010", "被指派的处理人不存在"),
+    TICKET_INSERT_CONFLICT("2011", "工单写入冲突，请检查数据一致性"),
 
     // 部门错误码
     DEPT_NOT_FOUND("3001", "部门不存在"),
