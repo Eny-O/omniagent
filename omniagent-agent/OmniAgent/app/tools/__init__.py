@@ -12,7 +12,6 @@
 from app.tools.ticket_tools import (
     query_tickets,
     get_ticket,
-    update_ticket_status,
     update_ticket,
     delete_ticket,
     withdraw_ticket,
@@ -22,6 +21,7 @@ from app.tools.ticket_tools import (
     add_ticket_comment,
     list_ticket_comments,
     submit_ticket,
+    list_sla_at_risk,
     get_user,
     get_department,
     list_departments,
@@ -32,7 +32,6 @@ from app.tools.ticket_tools import (
 tools = [
     query_tickets,
     get_ticket,
-    update_ticket_status,
     update_ticket,
     delete_ticket,
     withdraw_ticket,
@@ -42,6 +41,7 @@ tools = [
     add_ticket_comment,
     list_ticket_comments,
     submit_ticket,
+    list_sla_at_risk,
     get_user,
     get_department,
     list_departments,

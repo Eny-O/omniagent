@@ -82,6 +82,12 @@ class SubmitTicketSchema(BaseModel):
     ticket_id: int = Field(..., description="工单ID（须为 DRAFT 草稿态，且为创建者本人或 ADMIN 可提交）")
 
 
+class SlaAtRiskSchema(BaseModel):
+    threshold_minutes: Optional[int] = Field(
+        default=None, description="自定义临期阈值（分钟）。不传则用默认规则：剩余时间 < 25% 解决SLA 或 < 2 小时（取较严）"
+    )
+
+
 class AssignTicketSchema(BaseModel):
     ticket_id: int = Field(..., description="工单ID")
     assignee_id: int = Field(..., description="被指派处理人ID（HANDLER 角色用户）")

@@ -10,6 +10,7 @@ config["configurable"]。ToolRuntime 由框架自动注入、LLM 不可见，比
 参数可靠（实测本版本中裸 config 参数不会注入到工具）。
 """
 import json
+from datetime import datetime, timedelta
 from typing import Optional, Union
 
 from langchain.tools import tool
@@ -26,6 +27,7 @@ from app.schemas.ticket import (
     DeleteTicketSchema,
     WithdrawTicketSchema,
     SubmitTicketSchema,
+    SlaAtRiskSchema,
     AssignTicketSchema,
     TransferDeptSchema,
     GetTicketHistorySchema,
@@ -139,6 +141,44 @@ async def _human_draft(draft: dict, acting_user=None, acting_role=None) -> dict:
         else:
             display[_KEY_LABELS.get(k, k)] = v
     return display
+
+
+def _fmt_duration(minutes) -> str:
+    """把分钟数转成中文时长：如 30 -> '30 分钟'，240 -> '4 小时'，150 -> '2 小时 30 分钟'。"""
+    try:
+        m = int(minutes)
+    except (TypeError, ValueError):
+        return str(minutes)
+    if m < 60:
+        return f"{m} 分钟"
+    hours, rem = divmod(m, 60)
+    if rem == 0:
+        return f"{hours} 小时"
+    return f"{hours} 小时 {rem} 分钟"
+
+
+def _sla_intro(priority_id) -> str:
+    """建单后提示：本优先级下需要的耗时（响应/解决 SLA）。查不到返回空串。"""
+    resp = dict_service.priority_response_sla(priority_id)
+    resol = dict_service.priority_resolve_sla(priority_id)
+    if resp is None and resol is None:
+        return ""
+    parts = []
+    if resp is not None:
+        parts.append(f"{_fmt_duration(resp)}内响应")
+    if resol is not None:
+        parts.append(f"{_fmt_duration(resol)}内解决")
+    return f"\n【SLA】本优先级下，预计需{'，'.join(parts)}（以实际受理为准）。"
+
+
+def _sla_deadline_intro(priority_id) -> str:
+    """提交后提示：从当前提交时间起算，预计在哪个时间点之前完成（基于解决 SLA）。查不到返回空串。"""
+    resol = dict_service.priority_resolve_sla(priority_id)
+    if resol is None:
+        return ""
+    deadline = datetime.now() + timedelta(minutes=resol)
+    return (f"\n【SLA】已按本优先级解决时限（{_fmt_duration(resol)}）预估，"
+            f"预计在 {deadline.strftime('%Y-%m-%d %H:%M')} 之前完成。")
 
 
 def _interpret_decision(decision) -> str:
@@ -316,6 +356,115 @@ async def update_ticket(
             "请根据该调整意见重新组织变更字段后，再次调用 update_ticket，不要追问已明确的信息。")
 
 
+def _parse_dt(s) -> datetime | None:
+    """把 ISO 时间串（如 '2026-10-22T10:00:00'）解析为 datetime，失败返回 None。"""
+    if not s:
+        return None
+    try:
+        return datetime.fromisoformat(str(s))
+    except ValueError:
+        return None
+
+
+async def _fetch_all_tickets(acting_user, acting_role) -> list:
+    """分页拉取当前角色可见的全部工单（后端 DataScope 已按角色过滤）。page_size 上限 100。"""
+    all_records: list = []
+    page, page_size, max_pages = 1, 100, 20
+    while page <= max_pages:
+        data = await backend_client.page_tickets(
+            page=page, page_size=page_size, acting_user=acting_user, acting_role=acting_role
+        )
+        if not isinstance(data, dict):
+            break
+        records = data.get("records") or []
+        all_records.extend(records)
+        pages = data.get("pages")
+        total = data.get("total")
+        if pages is not None:
+            if page >= int(pages):
+                break
+        elif total is not None:
+            if page * page_size >= int(total):
+                break
+        else:
+            break  # 无分页元信息，拉一页即止
+        page += 1
+    return all_records
+
+
+def _filter_sla_candidates(records, role, acting_user) -> list:
+    """按角色筛选临期评估候选：主管=本部门待派单；处理人=分配给我的待处理/处理中；其他=自己未闭环单。"""
+    out: list = []
+    for t in records or []:
+        status_id = t.get("statusId")
+        assignee = t.get("currentAssigneeId")
+        if role == "SUPERVISOR":
+            if status_id == 2 and not assignee:           # PENDING 且无处理人
+                out.append(t)
+        elif role == "HANDLER":
+            if status_id in (2, 3) and assignee == acting_user:  # PENDING/PROCESSING 且处理人==我
+                out.append(t)
+        else:
+            if status_id in (1, 2, 3, 4) and t.get("creatorId") == acting_user:
+                out.append(t)
+    return out
+
+
+def _risk_header(role) -> str:
+    if role == "SUPERVISOR":
+        return "以下工单临近 SLA 解决时限且尚未派单，请优先派单："
+    if role == "HANDLER":
+        return "以下分配给你的工单临近 SLA 解决时限，请优先处理："
+    return "以下你创建的工单临近 SLA 解决时限，可催促主管/处理人："
+
+
+def _no_risk_message(role) -> str:
+    return "✅ 当前没有临近 SLA 时限的工单。"
+
+
+@tool(args_schema=SlaAtRiskSchema)
+async def list_sla_at_risk(threshold_minutes: Optional[int] = None, runtime: ToolRuntime = None) -> str:
+    """查询临近 SLA 解决时限的工单（按需）。当用户问"我有哪些快超时的工单/哪些工单快到期/帮我看看临期单"时调用。
+    按当前角色自动圈定范围：主管=本部门待派单；处理人=分配给我的待处理/处理中；报障人=自己未闭环的工单。
+    返回临期工单清单及建议动作（主管优先派单、处理人优先处理）。threshold_minutes 可自定义临期阈值（分钟），
+    不传则默认规则：剩余时间 < 25% 解决SLA 或 < 2 小时（取较严）。"""
+    acting_user, acting_role = _acting(runtime)
+    records = await _fetch_all_tickets(acting_user, acting_role)
+    if not records:
+        return "当前没有可查看的工单。"
+    candidates = _filter_sla_candidates(records, acting_role, acting_user)
+    if not candidates:
+        return _no_risk_message(acting_role)
+
+    at_risk = []
+    for t in candidates:
+        priority_id = t.get("priorityId")
+        created_at = _parse_dt(t.get("createdAt"))
+        if created_at is None:
+            continue
+        sla = dict_service.priority_resolve_sla(priority_id)
+        if sla is None:
+            continue
+        deadline = created_at + timedelta(minutes=sla)
+        remaining = (deadline - datetime.now()).total_seconds() / 60
+        threshold = threshold_minutes if threshold_minutes is not None else min(int(sla * 0.25), 120)
+        if remaining < threshold:
+            at_risk.append((t, remaining, priority_id))
+    if not at_risk:
+        return _no_risk_message(acting_role)
+
+    at_risk.sort(key=lambda x: x[1])  # 剩余时间升序，最紧急的在前
+    lines = [_risk_header(acting_role)]
+    for t, remaining, priority_id in at_risk:
+        label = dict_service.priority_label(priority_id) or priority_id
+        status_lbl = dict_service.status_label(t.get("statusId")) or t.get("statusId")
+        title = t.get("title") or ""
+        tid = t.get("id")
+        rem = max(0, int(remaining))
+        lines.append(f"#{tid} {title}｜优先级 {label}｜状态 {status_lbl}｜剩余 {_fmt_duration(rem)}")
+    return "\n".join(lines)
+
+
 @tool(args_schema=SubmitTicketSchema)
 async def submit_ticket(ticket_id: int, runtime: ToolRuntime = None) -> str:
     """提交工单。当草稿态工单（由创建者本人创建）需要正式提交、进入待处理时调用。
@@ -347,7 +496,9 @@ async def submit_ticket(ticket_id: int, runtime: ToolRuntime = None) -> str:
     if action == "confirm":
         try:
             data = await backend_client.submit_ticket(ticket_id, acting_user=acting_user, acting_role=acting_role)
-            return "工单已提交（待处理）。" if not data else json.dumps(data, ensure_ascii=False)
+            if not data:
+                return "工单已提交（待处理）。"
+            return json.dumps(data, ensure_ascii=False) + _sla_deadline_intro(data.get("priorityId"))
         except backend_client.BackendError as e:
             return f"提交工单失败：{e}"
     if action == "cancel":
@@ -612,7 +763,7 @@ async def create_ticket_draft(
     if action == "confirm":
         try:
             data = await backend_client.create_ticket(draft, acting_user=acting_user, acting_role=acting_role)
-            return "工单已创建（草稿态）：" + json.dumps(data, ensure_ascii=False)
+            return "工单已创建（草稿态）：" + json.dumps(data, ensure_ascii=False) + _sla_intro(data.get("priorityId"))
         except backend_client.BackendError as e:
             return f"创建工单失败：{e}"
     if action == "cancel":

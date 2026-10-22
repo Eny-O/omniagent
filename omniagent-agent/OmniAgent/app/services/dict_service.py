@@ -135,6 +135,30 @@ def source_label(code) -> str | None:
     return None
 
 
+def priority_response_sla(value) -> int | None:
+    """优先级 id -> 响应 SLA（分钟）。未命中/未预热返回 None。"""
+    for i in _cache["priorities"] or []:
+        if i.get("value") == value:
+            return i.get("responseSlaMinutes")
+    return None
+
+
+def priority_resolve_sla(value) -> int | None:
+    """优先级 id -> 解决 SLA（分钟）。未命中/未预热返回 None。"""
+    for i in _cache["priorities"] or []:
+        if i.get("value") == value:
+            return i.get("resolveSlaMinutes")
+    return None
+
+
+def status_label(value) -> str | None:
+    """状态 id -> 状态名称（如 2 -> '待处理'）。未命中返回 None。"""
+    for i in _cache["statuses"] or []:
+        if i.get("value") == value:
+            return i.get("label")
+    return None
+
+
 def priority_options() -> list:
     return _cache["priorities"] or []
 
