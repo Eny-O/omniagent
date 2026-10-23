@@ -565,7 +565,7 @@ async def recommend_assignee(ticket_id: int, runtime: ToolRuntime = None) -> str
     if dept_id is None:
         return "该工单未关联部门，无法按部门推荐处理人。"
 
-    # 候选处理人：本部门 + 启用 + 角色=HANDLER（阶段0已支持按 role 过滤）
+    # 候选处理人：本部门 + 启用 + 角色=HANDLER
     handlers: list = []
     page, page_size = 1, 100
     while page <= 20:
@@ -599,7 +599,7 @@ async def recommend_assignee(ticket_id: int, runtime: ToolRuntime = None) -> str
         st = t.get("statusId")
         if st in (4, 5):            # RESOLVED(4) / CLOSED(5) → 专长
             expertise[aid] += 1
-        if st in (7, 2, 3):         # TO_ASSIGN(7) / PENDING(2) / PROCESSING(3) → 负载（未闭环）
+        if st in (2, 3):         # PENDING(2) / PROCESSING(3) → 负载（未闭环）
             load[aid] += 1
 
     # 排名：专长降序，同分负载升序，取 Top-3

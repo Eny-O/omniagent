@@ -19,6 +19,18 @@ class Settings(BaseSettings):
     omniagent_api_base_url: str = "http://localhost:8080"
     omniagent_api_key: str = "123456"
 
+    # === PostgreSQL（KB 向量库，Agent 直连；与 Java 业务表同一 database）===
+    pg_dsn: str = "postgresql://xx:xx@localhost:5432/xx"
+
+    # === 知识库 embedding（阿里云百炼 qwen3.7-text-embedding）===
+    dashscope_api_key: str = ""  # 百炼 API Key（和 deepseek 不同厂商，单独配）
+    embedding_model: str = "qwen3.7-text-embedding"
+    embedding_dim: int = 1024  # ⚠ 锁死：必须和建表时 kb_chunks.embedding 的 vector(1024) 一致；改维度须重跑入库
+    kb_chunk_size: int = 800  # 切块大小（字符），可按资料类型调
+    kb_chunk_overlap: int = 120  # 切块重叠（字符），避免切到句子中间丢上下文
+    kb_top_k: int = 5  # 检索返回前 k 条
+    kb_rerank_enabled: bool = False  # rerank 预留开关，默认关
+
 
 # 单例，全项目复用
 settings = Settings()

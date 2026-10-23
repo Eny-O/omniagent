@@ -5,6 +5,8 @@ from app.services import dict_service
 from contextlib import asynccontextmanager
 from fastapi import Request
 from fastapi.responses import JSONResponse
+from app.core.database import init_pool, close_pool
+
 
 
 
@@ -18,8 +20,14 @@ async def lifespan(app):
     except Exception as e:
         # Java 未启动时不阻塞启动，仅告警
         print(f"[warn] 字典预热失败（Java 未启动？）：{e}")
+    # 初始化 KB 向量库连接池（启动时建一次）
+    try:
+        await init_pool()
+    except Exception as e:
+        print(f"[warn] KB 向量库连接池初始化失败（PG 未启动或配置错？）：{e}")
     yield
-    # 关闭时：释放资源
+    # 关闭时：释放 PG 连接池
+    await close_pool()
 
 # 设置 FastAPI 的主入口应用
 app = FastAPI(title="OmniAgent AI 后端", version="1.0.0",lifespan=lifespan)
