@@ -84,7 +84,7 @@ class TicketServiceImplTest {
         // then
         assertNotNull(result);
         assertEquals("电脑蓝屏无法启动", result.getTitle());
-        assertEquals(TicketStatusEnum.DRAFT.getSortOrder(), result.getStatusId());
+        assertEquals(TicketStatusEnum.DRAFT.getDbId(), result.getStatusId());
         assertEquals(1L, result.getCreatorId());
         assertEquals("WEB", result.getSource());
         assertNotNull(result.getTicketNo());
@@ -244,7 +244,7 @@ class TicketServiceImplTest {
         ticketService.updateTicketStatus(1L, dto, 1L);
 
         // then
-        assertEquals(TicketStatusEnum.PENDING.getSortOrder(), ticket.getStatusId());
+        assertEquals(TicketStatusEnum.PENDING.getDbId(), ticket.getStatusId());
         verify(ticketMapper, times(1)).updateById(ticket);
     }
 
@@ -448,7 +448,7 @@ class TicketServiceImplTest {
         ticket.setTicketNo(ticketNo);
         ticket.setTitle("电脑蓝屏");
         ticket.setDescription("开机后蓝屏");
-        ticket.setStatusId(status.getSortOrder());
+        ticket.setStatusId(status.getDbId());
         ticket.setPriorityId(1);
         ticket.setCategoryId(1);
         ticket.setCreatorId(1L);

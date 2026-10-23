@@ -13,9 +13,9 @@ const dictStore = useDictStore()
 // 状态判定基于字典 code，避免前端硬编码
 const statusCode = (statusId: number | undefined) =>
   dictStore.statusOptions.find((s) => s.value === statusId)?.code
-// 报障人仅在「草稿 / 待处理」可编辑或撤回（与后端 assertEditable / withdrawTicket 一致）
+// 报障人仅在「草稿 / 待派单 / 待处理」可编辑或撤回（与后端 assertEditable / withdrawTicket 一致）
 const isDraftOrPending = (row: TicketPageVO) =>
-  statusCode(row.statusId) === 'DRAFT' || statusCode(row.statusId) === 'PENDING'
+  statusCode(row.statusId) === 'DRAFT' || statusCode(row.statusId) === 'TO_ASSIGN' || statusCode(row.statusId) === 'PENDING'
 
 // 搜索
 const searchForm = reactive({ keyword: '', statusId: null as number | null })
@@ -77,7 +77,7 @@ const handleCreate = () => {
   dialogVisible.value = true
 }
 
-// 编辑提交内容（仅草稿 / 待处理）
+// 编辑提交内容（仅草稿 / 待派单 / 待处理）
 const handleEdit = (row: TicketPageVO) => {
   currentTicket.value = {
     id: row.id,
@@ -100,7 +100,7 @@ const goDetail = (row: TicketPageVO) => {
   router.push(`/tickets/${row.id}?from=reporter`)
 }
 
-// 撤回 / 取消（仅草稿 / 待处理）
+// 撤回 / 取消（仅草稿 / 待派单 / 待处理）
 const handleWithdraw = (row: TicketPageVO) => {
   ElMessageBox.confirm(`确定撤回工单「${row.title}」吗？撤回后状态将变为已取消。`, '提示', {
     confirmButtonText: '确定',
@@ -211,7 +211,7 @@ onMounted(async () => {
         </el-table-column>
         <el-table-column label="状态" width="90">
           <template #default="{ row }">
-            <el-tag :type="dictStore.getStatusTagType(row.statusId)">
+            <el-tag :style="dictStore.getStatusTagStyle(row.statusId)">
               {{ dictStore.getStatusLabel(row.statusId) }}
             </el-tag>
           </template>

@@ -389,19 +389,19 @@ async def _fetch_all_tickets(acting_user, acting_role, category_id: Optional[int
 
 
 def _filter_sla_candidates(records, role, acting_user) -> list:
-    """按角色筛选临期评估候选：主管=本部门待派单；处理人=分配给我的待处理/处理中；其他=自己未闭环单。"""
+    """按角色筛选临期评估候选：主管=本部门待派单(TO_ASSIGN=7)无处理人；处理人=分配给我的待处理(2)/处理中(3)；其他=自己未闭环单。"""
     out: list = []
     for t in records or []:
         status_id = t.get("statusId")
         assignee = t.get("currentAssigneeId")
         if role == "SUPERVISOR":
-            if status_id == 2 and not assignee:           # PENDING 且无处理人
+            if status_id == 7 and not assignee:           # TO_ASSIGN 待派单(id=7) 且无处理人
                 out.append(t)
         elif role == "HANDLER":
-            if status_id in (2, 3) and assignee == acting_user:  # PENDING/PROCESSING 且处理人==我
+            if status_id in (2, 3) and assignee == acting_user:  # PENDING(2)/PROCESSING(3) 且处理人==我
                 out.append(t)
         else:
-            if status_id in (1, 2, 3, 4) and t.get("creatorId") == acting_user:
+            if status_id in (1, 7, 2, 3) and t.get("creatorId") == acting_user:  # DRAFT(1)/TO_ASSIGN(7)/PENDING(2)/PROCESSING(3) 本人未闭环
                 out.append(t)
     return out
 
@@ -463,11 +463,11 @@ async def list_sla_at_risk(threshold_minutes: Optional[int] = None, runtime: Too
 
 @tool(args_schema=SubmitTicketSchema)
 async def submit_ticket(ticket_id: int, runtime: ToolRuntime = None) -> str:
-    """提交工单。当草稿态工单（由创建者本人创建）需要正式提交、进入待处理时调用。
-    仅 DRAFT 草稿态 + 创建者本人/ADMIN 可提交（DRAFT→PENDING）。"""
+    """提交工单。当草稿态工单（由创建者本人创建）需要正式提交、进入待派单时调用。
+    仅 DRAFT 草稿态 + 创建者本人/ADMIN 可提交（DRAFT→TO_ASSIGN）。"""
     acting_user, acting_role = _acting(runtime)
 
-    # 提交会使工单由草稿进入待处理，打断请用户确认（best-effort 带标题便于核对）
+    # 提交会使工单由草稿进入待派单，打断请用户确认（best-effort 带标题便于核对）
     title = ""
     try:
         info = await backend_client.get_ticket(ticket_id, acting_user=acting_user, acting_role=acting_role)
@@ -481,7 +481,7 @@ async def submit_ticket(ticket_id: int, runtime: ToolRuntime = None) -> str:
         "ticket_id": ticket_id,
         "message": (
             f"即将提交工单 #{ticket_id}" + (f"（{title}）" if title else "")
-            + "，提交后将由草稿进入待处理（PENDING），由主管/处理人受理。\n"
+            + "，提交后将由草稿进入待派单（TO_ASSIGN），由主管派单后进入待处理（PENDING），再由处理人受理。\n"
             + "- 点击「确认」按钮执行提交；\n"
             + "- 点击「取消」按钮放弃本次提交；\n"
             + "- 或在下方输入框填写其他要执行的操作。\n"
@@ -493,7 +493,7 @@ async def submit_ticket(ticket_id: int, runtime: ToolRuntime = None) -> str:
         try:
             data = await backend_client.submit_ticket(ticket_id, acting_user=acting_user, acting_role=acting_role)
             if not data:
-                return "工单已提交（待处理）。"
+                return "工单已提交（待派单）。"
             return json.dumps(data, ensure_ascii=False) + _sla_deadline_intro(data.get("priorityId"))
         except backend_client.BackendError as e:
             return f"提交工单失败：{e}"
@@ -597,9 +597,9 @@ async def recommend_assignee(ticket_id: int, runtime: ToolRuntime = None) -> str
         if aid not in handler_ids:
             continue
         st = t.get("statusId")
-        if st in (4, 5):            # RESOLVED / CLOSED → 专长
+        if st in (4, 5):            # RESOLVED(4) / CLOSED(5) → 专长
             expertise[aid] += 1
-        if st in (2, 3):            # PENDING / PROCESSING → 负载
+        if st in (7, 2, 3):         # TO_ASSIGN(7) / PENDING(2) / PROCESSING(3) → 负载（未闭环）
             load[aid] += 1
 
     # 排名：专长降序，同分负载升序，取 Top-3

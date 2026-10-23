@@ -24,7 +24,8 @@ export const useDictStore = defineStore('dict', () => {
   const loaded = ref(false)
   const loading = ref(false)
 
-  // el-select 只需 {value,label}，直接透传后端 VO（value=数据库主键 id；来源 value=编码字符串）
+  // el-select 只需 {value,label}，直接透传后端 VO（value=表主键 id；来源 value=编码字符串）。
+  // 状态标识统一用 ticket_statuses.id：tickets.status_id 存的就是 id（如 TO_ASSIGN 占 id=7，sort_order=2 仅用于显示排序）。
   const categoryOptions = computed(() => categories.value)
   const statusOptions = computed(() => statuses.value)
   const priorityOptions = computed(() => priorities.value)
@@ -76,22 +77,28 @@ export const useDictStore = defineStore('dict', () => {
   }
 
   /**
-   * 状态标签颜色：保留原硬编码语义（仅显示用）。
-   * 后续可由后端 StatusOptionVO 扩展 tagType 字段驱动，做到完全动态。
+   * 状态标签配色：按语义为每个状态独立配色（el-tag 内置 type 仅 5 色，不够 7 个状态区分，
+   * 故返回内联样式覆盖 el-tag 的文字/背景/边框色，浅色主题下均为"浅底深字"）。
+   * 键 = 状态字典 id（tickets.status_id 存储值）：
+   * DRAFT=1 / PENDING=2 / PROCESSING=3 / RESOLVED=4 / CLOSED=5 / CANCELLED=6 / TO_ASSIGN=7
    */
-  const getStatusTagType = (
+  const getStatusTagStyle = (
     statusId: number | null,
-  ): 'info' | 'warning' | 'primary' | 'success' | 'danger' => {
-    const map: Record<number, 'info' | 'warning' | 'primary' | 'success' | 'danger'> = {
-      1: 'info',
-      2: 'warning',
-      3: 'primary',
-      4: 'success',
-      5: 'info',
-      6: 'info',
+  ): { color: string; backgroundColor: string; borderColor: string } => {
+    const map: Record<
+      number,
+      { color: string; backgroundColor: string; borderColor: string }
+    > = {
+      1: { color: '#909399', backgroundColor: '#f4f4f5', borderColor: '#d3d4d6' }, // DRAFT 草稿：灰（未提交）
+      2: { color: '#409eff', backgroundColor: '#ecf5ff', borderColor: '#b3d8ff' }, // PENDING 待处理：蓝（已派单等待处理）
+      3: { color: '#722ed1', backgroundColor: '#f4efff', borderColor: '#d3c0f5' }, // PROCESSING 处理中：紫（进行中）
+      4: { color: '#67c23a', backgroundColor: '#f0f9eb', borderColor: '#c2e7b0' }, // RESOLVED 已解决：绿（已给出方案）
+      5: { color: '#515a6e', backgroundColor: '#e4e7ed', borderColor: '#c0c4cc' }, // CLOSED 已关闭：深灰（归档完结）
+      6: { color: '#f56c6c', backgroundColor: '#fef0f0', borderColor: '#fbc4c4' }, // CANCELLED 已取消：红（作废）
+      7: { color: '#e6a23c', backgroundColor: '#fdf6ec', borderColor: '#f5dab1' }, // TO_ASSIGN 待派单：橙（待主管派单）
     }
-    if (statusId == null) return 'info'
-    return map[statusId] || 'info'
+    if (statusId == null) return map[1]
+    return map[statusId] || map[1]
   }
 
   return {
@@ -109,6 +116,6 @@ export const useDictStore = defineStore('dict', () => {
     getPriorityLabel,
     getStatusLabel,
     getSourceLabel,
-    getStatusTagType,
+    getStatusTagStyle,
   }
 })

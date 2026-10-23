@@ -91,7 +91,7 @@ export const withdrawTicket = async (id: number): Promise<ResponseResult<void>> 
 }
 
 /**
- * 提交工单（创建者本人 / 管理员）：将草稿(DRAFT)转为待处理(PENDING)
+ * 提交工单（创建者本人 / 管理员）：将草稿(DRAFT)转为待派单(TO_ASSIGN)
  */
 export const submitTicket = async (id: number): Promise<ResponseResult<TicketVO>> => {
   return await request.post(`/tickets/${id}/submit`)

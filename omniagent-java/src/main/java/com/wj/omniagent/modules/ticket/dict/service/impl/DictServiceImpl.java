@@ -86,6 +86,8 @@ public class DictServiceImpl implements DictService {
 
     private StatusOptionVO toStatusVO(TicketStatuses e) {
         StatusOptionVO vo = new StatusOptionVO();
+        // 状态字典的 value 使用表主键 id（与 tickets.status_id 存储值一致，后端 TicketStatusEnum.dbId 对应）。
+        // 注意不要改成 sort_order：sort_order 仅用于显示排序，TO_ASSIGN 占 id=7、sort_order=2。
         vo.setValue(e.getId());
         vo.setLabel(e.getStatusName());
         vo.setCode(e.getStatusCode());

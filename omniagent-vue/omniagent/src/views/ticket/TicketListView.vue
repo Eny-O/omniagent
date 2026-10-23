@@ -45,7 +45,7 @@ const isTerminal = (row: TicketPageVO) =>
 const statusCode = (statusId: number | undefined) =>
   dictStore.statusOptions.find((s) => s.value === statusId)?.code
 const isDraftOrPending = (row: TicketPageVO) =>
-  statusCode(row.statusId) === 'DRAFT' || statusCode(row.statusId) === 'PENDING'
+  statusCode(row.statusId) === 'DRAFT' || statusCode(row.statusId) === 'TO_ASSIGN' || statusCode(row.statusId) === 'PENDING'
 const canEdit = (row: TicketPageVO) =>
   isAdmin.value
     ? !isTerminal(row)
@@ -291,7 +291,7 @@ onMounted(async () => {
         </el-table-column>
         <el-table-column label="状态" width="90">
           <template #default="{ row }">
-            <el-tag :type="dictStore.getStatusTagType(row.statusId)">
+            <el-tag :style="dictStore.getStatusTagStyle(row.statusId)">
               {{ dictStore.getStatusLabel(row.statusId) }}
             </el-tag>
           </template>

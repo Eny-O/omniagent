@@ -12,6 +12,7 @@ import type {
 import {
   addComment,
   assignTicket,
+  deleteTicket,
   getTicketById,
   getTicketHistory,
   listComments,
@@ -35,8 +36,10 @@ const userStore = useUserStore()
 const ticketId = computed(() => Number(route.params.id))
 
 // 状态正向流转：基于字典 StatusOptionVO 的 sortOrder（后端 ticket_statuses 已含 code 与 sortOrder）
-// 下一步 = 当前状态 sortOrder + 1 的状态（线性流：DRAFT→PENDING→PROCESSING→RESOLVED→CLOSED）；
-// CANCELLED 的 sortOrder 不承接正向推进，故不会被选中。彻底去掉前端硬编码映射。
+// 下一步 = 当前状态 sortOrder + 1 的状态（线性流：DRAFT→TO_ASSIGN→PENDING→PROCESSING→RESOLVED→CLOSED）；
+// CANCELLED 与 CLOSED 不承接正向推进（终态），故不会被选中。彻底去掉前端硬编码映射。
+// 备注：待派单(TO_ASSIGN)态不显示“推进”按钮，必须由主管/管理员“派单”推进到待处理(PENDING)；
+// 终态工单（已关闭/已取消）不做状态推进，由管理员直接“删除工单”。
 
 const loading = ref(false)
 const ticket = ref<TicketVO | null>(null)
@@ -59,15 +62,17 @@ const canWithdraw = computed(
     currentRole.value === null ||
     ((isReporter.value &&
       !isTerminal.value &&
-      ticket.value?.statusId === 1) ||
+      (ticket.value?.statusId === 1 || currentStatus.value?.code === 'TO_ASSIGN')) ||
       currentRole.value === 'ADMIN'),
 )
 // 派单权限闸门：主管 / 管理员可见；草稿(DRAFT)态隐藏——草稿只能由创建者先“提交”，
-// 不再借派单把草稿推到待处理（解耦派单“指定处理人”与“草稿→待处理”流转）
+// 不再借派单把草稿推到待处理（解耦派单“指定处理人”与“草稿→待处理”流转）；
+// 终态（CLOSED/CANCELLED）不可再派单。处理人(HANDLER)不在派单角色内，故看不到派单按钮。
 const canAssign = computed(
   () =>
     (currentRole.value === null || currentRole.value === 'SUPERVISOR' || currentRole.value === 'ADMIN') &&
-    ticket.value?.statusId !== 1,
+    ticket.value?.statusId !== 1 &&
+    !isTerminal.value,
 )
 // 提交权限闸门：创建者本人 / 管理员 在草稿(DRAFT)态可见；调试期 role 为 null 放开
 const canSubmit = computed(
@@ -101,14 +106,36 @@ const nextStatus = computed(() => {
 const nextStatusCode = computed(() => nextStatus.value?.code ?? null)
 const nextStatusLabel = computed(() => nextStatus.value?.label ?? '')
 
-// 正向推进按钮可见闸门：DRAFT 态不允许正向推进——草稿只能由创建者本人主动“提交”进入 PENDING，
-// 保证提交后 PENDING 工单既有明确状态、又可在后续由主管“派单”指定处理人，流程不断链。
+// 正向推进按钮可见闸门：DRAFT 与 TO_ASSIGN 态不允许正向推进——
+// 草稿只能由创建者本人主动“提交”进入待派单(TO_ASSIGN)；待派单必须由主管/管理员“派单”进入待处理(PENDING)，
+// 保证“派单完才能处理”。终态（CLOSED/CANCELLED）不再推进——已关闭的单不推“已取消”，改由管理员删除。其余态可线性推进。
 const canAdvance = computed(
   () =>
     canProcess.value &&
+    !isTerminal.value &&
     !!nextStatusCode.value &&
-    currentStatus.value?.code !== 'DRAFT',
+    currentStatus.value?.code !== 'DRAFT' &&
+    currentStatus.value?.code !== 'TO_ASSIGN',
 )
+// 删除工单闸门：仅管理员（后端 assertCanDelete 真实鉴权）；调试期 role 为 null 放开
+const canDelete = computed(
+  () => currentRole.value === null || currentRole.value === 'ADMIN',
+)
+// 取消工单闸门：主管 / 处理人 可取消本人创建的工单，状态窗口与报障人“撤回”一致（仅草稿/待派单）。
+// 待处理及之后不可取消；管理员已有“撤回+删除”，此处不再重复。
+const canCancel = computed(() => {
+  const role = currentRole.value
+  if (role === null) return true
+  if (role === 'SUPERVISOR' || role === 'HANDLER') {
+    const code = currentStatus.value?.code
+    return (
+      (code === 'DRAFT' || code === 'TO_ASSIGN') &&
+      ticket.value != null &&
+      ticket.value.creatorId === userStore.user?.id
+    )
+  }
+  return false
+})
 
 const activeTab = ref('overview')
 
@@ -211,10 +238,27 @@ const handleWithdraw = async () => {
   await loadTicket()
 }
 
-// 提交工单（创建者本人 / 管理员）：草稿转为待处理
+// 取消（主管 / 处理人 取消本人创建的工单；复用 withdrawTicket 接口，终态置为已取消）
+const handleCancel = async () => {
+  try {
+    await ElMessageBox.confirm(
+      '确定取消该工单吗？取消后工单将作废（已取消），不可再处理。',
+      '提示',
+      { type: 'warning' },
+    )
+  } catch {
+    return
+  }
+  const res = await withdrawTicket(ticketId.value)
+  if (res.code !== '200') return
+  ElMessage.success('工单已取消')
+  await loadTicket()
+}
+
+// 提交工单（创建者本人 / 管理员）：草稿转为待派单(TO_ASSIGN)
 const handleSubmit = async () => {
   try {
-    await ElMessageBox.confirm('确定提交该工单吗？提交后状态将变为待处理，可由主管派单处理。', '提示', {
+    await ElMessageBox.confirm('确定提交该工单吗？提交后状态将变为待派单，等待主管派单处理。', '提示', {
       type: 'warning',
     })
   } catch {
@@ -222,8 +266,25 @@ const handleSubmit = async () => {
   }
   const res = await submitTicket(ticketId.value)
   if (res.code !== '200') return
-  ElMessage.success('工单已提交')
+  ElMessage.success('工单已提交（待派单），等待主管派单')
   await loadTicket()
+}
+
+// 删除工单（仅管理员）：硬删除，删除后不可恢复，成功后返回列表页
+const handleDelete = async () => {
+  try {
+    await ElMessageBox.confirm(
+      '确定删除该工单吗？删除后数据不可恢复！',
+      '危险操作',
+      { type: 'error', confirmButtonText: '删除', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  const res = await deleteTicket(ticketId.value)
+  if (res.code !== '200') return
+  ElMessage.success('工单已删除')
+  router.back()
 }
 
 // 派单弹窗
@@ -362,7 +423,7 @@ onMounted(async () => {
       <span v-if="ticket" class="header-no">{{ ticket.ticketNo }}</span>
       <el-tag
         v-if="ticket"
-        :type="dictStore.getStatusTagType(ticket.statusId)"
+        :style="dictStore.getStatusTagStyle(ticket.statusId)"
         size="small"
       >
         {{ dictStore.getStatusLabel(ticket.statusId) }}
@@ -384,11 +445,17 @@ onMounted(async () => {
       <el-button v-if="canSubmit" type="primary" @click="handleSubmit">
         提交工单
       </el-button>
+      <el-button v-if="canCancel" type="warning" @click="handleCancel">
+        取消工单
+      </el-button>
       <el-button v-if="canAssign" type="success" @click="openAssign">
         派单
       </el-button>
       <el-button v-if="canTransfer" type="warning" @click="openTransfer">
         转部门
+      </el-button>
+      <el-button v-if="canDelete" type="danger" @click="handleDelete">
+        删除工单
       </el-button>
     </div>
 
