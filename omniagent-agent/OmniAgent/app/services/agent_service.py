@@ -28,6 +28,8 @@ llm = init_chat_model(
     temperature=0.2,
     max_tokens=2048,
     streaming=True,
+    timeout=60.0,
+    max_retries=2,  # 瞬时失败（限流/抖动）自动重试，提升韧性
 )
 
 # 工具统一在 app.tools 包登记，此处直接装配

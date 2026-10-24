@@ -63,3 +63,38 @@ async def handle_exception(req: Request, exc: Exception):
 async def root():
     return {"status": "OK"}
 
+@app.get("/healthz")
+async def healthz():
+    """健康检查：返回各依赖就绪状态（探活用）。
+
+    依赖未就绪只体现在 body 的 checks 字段，整体仍返回 200，
+    避免 k8s/网关因依赖抖动误杀容器（雪崩）。
+    """
+    from app.core.config import settings
+    checks: dict = {}
+
+    # PG checkpointer 池（会话持久化）
+    try:
+        from app.services import agent_service
+        checks["pg_checkpointer"] = (
+            "ready" if (agent_service._pg_pool is not None and agent_service._pg_pool.open)
+            else "not_ready"
+        )
+    except Exception:
+        checks["pg_checkpointer"] = "unknown"
+
+    # KB 向量库池
+    try:
+        from app.core.database import get_pool
+        get_pool()  # 未初始化会抛 RuntimeError
+        checks["kb_pg"] = "ready"
+    except Exception:
+        checks["kb_pg"] = "not_ready"
+
+    # 关键配置
+    checks["deepseek_config"] = (
+        "ready" if settings.deepseek_api_key and settings.deepseek_base_url else "missing"
+    )
+
+    return {"status": "OK", "checks": checks}
+

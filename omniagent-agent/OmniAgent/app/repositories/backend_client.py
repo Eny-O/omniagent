@@ -54,9 +54,17 @@ async def request(
     async with httpx.AsyncClient(
         base_url=settings.omniagent_api_base_url, timeout=10.0
     ) as client:
-        resp = await client.request(
-            method, path, params=params, json=json, headers=headers
-        )
+        try:
+            resp = await client.request(
+                method, path, params=params, json=json, headers=headers
+            )
+        except httpx.TimeoutException:
+            # except backend_client.BackendError 自动覆盖，返回友好提示而非技术异常
+            raise BackendError("Java 后端响应超时（>10s），请稍后重试", 504)
+        except httpx.RequestError as e:
+            # 连接失败等传输层错误（ConnectError 等均为 RequestError 子类）
+            raise BackendError(f"无法连接 Java 后端：{e}", 503)
+
         try:
             body = resp.json()
         except Exception:

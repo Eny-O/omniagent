@@ -6,21 +6,21 @@ POST /api/agent/chat  { message, user_id?, acting_role? } -> { reply }
 身份透传：把真实操作人的 user_id / acting_role 通过 LangGraph 的
 config["configurable"] 传下去，工具内用 ToolRuntime 读取（见 app.tools.ticket_tools）。
 """
-from fastapi import APIRouter
-from langgraph.errors import GraphInterrupt
-from pydantic import BaseModel
-from langgraph.types import Command
+from pydantic import BaseModel, Field
 from fastapi.responses import StreamingResponse
-from app.services.agent_service import agent, stream_run, stream_resume  # 改 import
+from app.services.agent_service import stream_run, stream_resume  # 改 import
+import json
+from fastapi import APIRouter, Request
+import asyncio
 
 router = APIRouter()
 
 
 class ChatRequest(BaseModel):
-    message: str
+    message: str = Field(min_length=1, max_length=4000) # 非空 + 上限，防空消息/超 context
     user_id: int | None = None  # 真实操作人，透传给 Java（X-Acting-User）
     acting_role: str | None = None  # 角色，透传给 Java（X-Acting-Role）
-    thread_id: str  # 会话线程ID（interrupt/resume 必须，两次调用保持一致）
+    thread_id: str = Field(min_length=1, max_length=128)  # 会话线程ID（interrupt/resume 必须，两次调用保持一致）
     resume: str | None = None  # 用户在草稿确认环节回复的内容
 
 
@@ -74,21 +74,33 @@ def _cfg(req: ChatRequest) -> dict:
 
 
 @router.post("/api/agent/chat/stream")
-async def chat_stream(req: ChatRequest):
+async def chat_stream(req: ChatRequest, request: Request):
     cfg = _cfg(req)
 
     async def event_gen():
-        if req.resume is not None:
-            async for frame in stream_resume(req.resume, cfg):
-                yield frame
-        else:
-            async for frame in stream_run(
+        try:
+            gen = (
+                stream_resume(req.resume, cfg)
+                if req.resume is not None
+                else stream_run(
                     {"user_input": req.message,
                      "acting_user": req.user_id,
                      "acting_role": req.acting_role},
                     cfg,
-            ):
+                )
+            )
+            async for frame in gen:
+                if await request.is_disconnected():
+                    break  # 客户端断开：退出循环会触发 gen.aclose()，取消底层 astream
                 yield frame
+        except asyncio.CancelledError:
+            return  # 客户端断开导致任务被取消，静默退出
+        except Exception as e:
+            # 工具调 Java 失败 / LLM 异常等：转成 error 帧，避免流断裂或 500
+            yield (
+                f"event: error\ndata: "
+                f"{json.dumps({'message': f'服务异常：{e}'}, ensure_ascii=False)}\n\n"
+            )
 
     return StreamingResponse(
         event_gen(),
