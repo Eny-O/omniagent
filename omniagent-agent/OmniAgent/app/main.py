@@ -25,9 +25,21 @@ async def lifespan(app):
         await init_pool()
     except Exception as e:
         print(f"[warn] KB 向量库连接池初始化失败（PG 未启动或配置错？）：{e}")
+    # 初始化持久化 checkpointer 并编译图（首次 startup 建 checkpoint 三表）
+    try:
+        from app.services.agent_service import init_agent
+        await init_agent()
+    except Exception as e:
+        print(f"[warn] Agent checkpointer 初始化失败（PG 未启动或配置错？）：{e}")
     yield
-    # 关闭时：释放 PG 连接池
+    # 关闭时：释放 PG 连接池（KB 池 + checkpointer 池）
     await close_pool()
+    try:
+        from app.services import agent_service
+        if agent_service._pg_pool is not None:
+            await agent_service._pg_pool.close()
+    except Exception:
+        pass
 
 # 设置 FastAPI 的主入口应用
 app = FastAPI(title="OmniAgent AI 后端", version="1.0.0",lifespan=lifespan)

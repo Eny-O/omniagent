@@ -3,7 +3,8 @@ import re
 from typing import TypedDict, Literal
 
 from langchain.chat_models import init_chat_model
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from psycopg_pool import AsyncConnectionPool
 from langgraph.constants import START, END
 from langgraph.graph import MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode
@@ -174,7 +175,34 @@ graph.add_conditional_edges(
 graph.add_edge("tool_node", "execute_node")
 graph.add_edge("finalize_node", END)
 
-agent = graph.compile(checkpointer=MemorySaver())
+# 编译后的图 + 自建 PG 连接池（启动时经 init_agent() 赋值；持久化 checkpointer）
+agent = None
+_pg_pool = None
+
+
+async def init_agent():
+    """启动时调用一次：自建连接池、建 checkpoint 表、编译图（持久化 checkpointer）。
+
+    连接池由本模块长期持有（运行期保持打开）；setup() 幂等（表已存在跳过）。
+    必须在任何 stream_run/stream_resume 之前执行（main.py lifespan 调用）。
+    """
+
+    async def _configure_conn(conn):
+        # LangGraph setup() 用 CREATE INDEX CONCURRENTLY，要求连接不在事务块内；
+        # 官方 from_conn_string 即用 autocommit=True 连接，这里保持一致。
+        # async 连接的 autocommit 是只读属性，必须 await set_autocommit()。
+        await conn.set_autocommit(True)
+
+    global agent, _pg_pool
+    if agent is not None:
+        return
+    _pg_pool = AsyncConnectionPool(
+        conninfo=settings.pg_dsn, open=False, min_size=1, max_size=10,configure=_configure_conn,
+    )
+    await _pg_pool.open()
+    saver = AsyncPostgresSaver(_pg_pool)
+    await saver.setup()  # 首次建 checkpoints/checkpoint_blobs/checkpoint_writes 三表
+    agent = graph.compile(checkpointer=saver)
 
 
 import json
@@ -182,7 +210,9 @@ from langgraph.types import Command
 
 
 async def stream_run(req_input: dict, config: dict):
-    # 图级 astream 实时捕获：messages=LLM 逐 token（前端打字机）；custom=节点中间信息
+    """图级 astream 实时捕获：messages=LLM 逐 token（前端打字机）；custom=节点中间信息"""
+    if agent is None:
+        await init_agent()
     async for mode, data in agent.astream(
         req_input, config, stream_mode=["messages", "custom"]
     ):
@@ -204,7 +234,9 @@ async def stream_run(req_input: dict, config: dict):
 
 
 async def stream_resume(resume_val: str, config: dict):
-    # 与 stream_run 同构，仅输入从 dict 换成 Command(resume=...)
+    """与 stream_run 同构，仅输入从 dict 换成 Command(resume=...)"""
+    if agent is None:
+        await init_agent()
     async for mode, data in agent.astream(
         Command(resume=resume_val), config, stream_mode=["messages", "custom"]
     ):
@@ -228,7 +260,7 @@ async def _emit_final(config: dict):
       - 线程处于中断暂停态 -> 下发 need_confirm（含确认/取消取值）；
       - 否则 -> 下发 done（携带最终 reply）。
     """
-    state = agent.get_state(config)
+    state = await agent.aget_state(config)
     interrupts = []
     for t in (state.tasks or []):
         interrupts.extend(getattr(t, "interrupts", []) or [])
