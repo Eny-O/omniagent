@@ -4,6 +4,7 @@ import axios, {
 } from 'axios'
 import { ElMessage } from 'element-plus'
 import router from '@/router'
+import { getToken } from '@/utils/token'
 
 interface ApiResponse<T = unknown> {
   code: string
@@ -35,13 +36,16 @@ interface ApiRequest {
 const request = axios.create({
   baseURL: '/api',
   timeout: 10000,
-  // Session/Cookie 方案：跨域请求自动携带 Cookie
-  withCredentials: true,
 }) as unknown as ApiRequest
 
 request.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
-    // Session/Cookie 方案由浏览器自动携带 Cookie，无需手动设置 token
+    // 无状态 JWT 方案：统一在请求头携带 Bearer
+    const token = getToken()
+    if (token) {
+      const headers = config.headers as Record<string, unknown>
+      headers['Authorization'] = `Bearer ${token}`
+    }
     return config
   },
   (error: unknown) => Promise.reject(error),

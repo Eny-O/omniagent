@@ -2,6 +2,7 @@ package com.wj.omniagent.modules.user.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.wj.omniagent.common.enums.ErrorCodeEnum;
+import com.wj.omniagent.common.security.JwtUtil;
 import com.wj.omniagent.common.utils.SecurityUtils;
 import com.wj.omniagent.exception.BusinessException;
 import com.wj.omniagent.modules.user.mapper.UserMapper;
@@ -9,29 +10,20 @@ import com.wj.omniagent.modules.user.pojo.dos.Users;
 import com.wj.omniagent.modules.user.pojo.dto.LoginDTO;
 import com.wj.omniagent.modules.user.pojo.vo.LoginUserVO;
 import com.wj.omniagent.modules.user.service.AuthService;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
-import jakarta.servlet.http.HttpSession;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
-import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
-import org.springframework.security.core.context.SecurityContext;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.web.authentication.logout.SecurityContextLogoutHandler;
-import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.util.Assert;
 
 import java.time.LocalDateTime;
 
 /**
- * 认证服务实现
+ * 认证服务实现（无状态 JWT 方案）
  */
 @Slf4j
 @Service
@@ -42,11 +34,7 @@ public class AuthServiceImpl implements AuthService {
 
     private final UserMapper userMapper;
 
-    private final HttpServletRequest request;
-
-    private final HttpServletResponse response;
-
-    private final SecurityContextRepository securityContextRepository;
+    private final JwtUtil jwtUtil;
 
     @Override
     public LoginUserVO login(LoginDTO dto) {
@@ -56,22 +44,14 @@ public class AuthServiceImpl implements AuthService {
 
         UsernamePasswordAuthenticationToken token =
                 new UsernamePasswordAuthenticationToken(dto.getUsername().trim(), dto.getPassword());
-
         try {
-            Authentication authentication = authenticationManager.authenticate(token);
-
-            // 显式创建 SecurityContext 并写入当前线程
-            SecurityContext context = SecurityContextHolder.createEmptyContext();
-            context.setAuthentication(authentication);
-            SecurityContextHolder.setContext(context);
-
-            // 触发 Session 创建，并显式把 SecurityContext 保存到 Session
-            // 保证后端能正确返回 Set-Cookie，前端 axios 后续请求可自动携带
-            HttpSession session = request.getSession(true);
-            securityContextRepository.saveContext(context, request, response);
-            log.info("用户登录成功，username={}，sessionId={}", dto.getUsername(), session.getId());
-
-            return buildLoginUserVO(dto.getUsername().trim());
+            authenticationManager.authenticate(token);
+            // 认证通过：签发 JWT（无状态，不创建 Session）
+            LoginUserVO vo = buildLoginUserVO(dto.getUsername().trim());
+            String jwt = jwtUtil.generateToken(vo.getId(), vo.getUsername(), vo.getRole(), vo.getDeptId());
+            vo.setToken(jwt);
+            log.info("用户登录成功，username={}", dto.getUsername());
+            return vo;
         } catch (BadCredentialsException e) {
             log.warn("登录密码错误，username={}", dto.getUsername());
             throw new BusinessException(ErrorCodeEnum.USER_PASSWORD_ERROR, "用户名或密码错误");
@@ -83,11 +63,8 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public void logout() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication != null && !(authentication instanceof AnonymousAuthenticationToken)) {
-            log.info("用户登出，username={}", authentication.getName());
-        }
-        new SecurityContextLogoutHandler().logout(request, null, authentication);
+        // 无状态方案：服务端不保存会话，登出由前端删除本地 token 完成。
+        // 如需服务端主动失效，需引入 JWT 黑名单（T6 可选）。
     }
 
     @Override

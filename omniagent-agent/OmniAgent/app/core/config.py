@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     omniagent_api_base_url: str = "http://localhost:8080"
     omniagent_api_key: str = "123456"
 
+    # === JWT 共享密钥（必须与 Java 端 jwt.secret 完全一致）===
+    jwt_secret: str = "omniagent-dev-secret-please-change-in-prod-1234567890"
+    jwt_expiration_minutes: int = 120
+
     # === PostgreSQL（KB 向量库，Agent 直连；与 Java 业务表同一 database）===
     pg_dsn: str = "postgresql://xx:xx@localhost:5432/xx"
 

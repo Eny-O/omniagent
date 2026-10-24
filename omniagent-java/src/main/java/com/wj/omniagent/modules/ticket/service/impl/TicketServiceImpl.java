@@ -4,7 +4,6 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import com.wj.omniagent.common.context.ActingContext;
 import com.wj.omniagent.common.enums.ErrorCodeEnum;
 import com.wj.omniagent.common.pojo.result.PageResult;
 import com.wj.omniagent.common.utils.SecurityUtils;
@@ -720,16 +719,17 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
     }
 
     /**
-     * 当前用户部门ID：Session 从 Principal 取；机器身份（Agent）按 ActingContext.userId 查用户表。
+     * 当前用户部门ID：从 JWT 身份（LoginUserPrincipal）取；兜底按用户ID查表。
      */
     private Long resolveCurrentDeptId() {
         Authentication authentication = SecurityUtils.getCurrentAuthentication();
         if (SecurityUtils.isAuthenticated() && authentication.getPrincipal() instanceof LoginUserPrincipal principal) {
             return principal.getDeptId();
         }
-        Long actingUid = ActingContext.getUserId();
-        if (actingUid != null) {
-            Users u = userMapper.selectById(actingUid);
+        // 兜底（JWT 已携带 deptId，正常不走到这里）：按当前用户ID查表
+        Long uid = SecurityUtils.getCurrentUserId();
+        if (uid != null) {
+            Users u = userMapper.selectById(uid);
             if (u != null) {
                 return u.getDeptId();
             }

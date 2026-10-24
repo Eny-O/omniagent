@@ -5,9 +5,10 @@
 并在 app/tools/__init__.py 的 tools 列表中登记。
 
 身份透传：工具通过 LangGraph 注入的 `runtime: ToolRuntime` 读取当前请求的操作人身份
-（user_id / role），其数据来自 api/agent.py 调用 ainvoke 时传入的
+（user_id / role / bearer），其数据来自 api/agent.py 调用 ainvoke 时传入的
 config["configurable"]。ToolRuntime 由框架自动注入、LLM 不可见，比手动透传 config
 参数可靠（实测本版本中裸 config 参数不会注入到工具）。
+bearer 为前端下发的 JWT，原样透传给 Java；user_id/role 供工具做权限判断。
 """
 import json
 from datetime import datetime, timedelta
@@ -50,34 +51,37 @@ REQUIRED_TICKET_FIELDS: dict[str, str] = {
 }
 _identity_by_thread: dict = {}
 def _acting(runtime: ToolRuntime) -> tuple:
-    """读取操作人身份，三级回退：
+    """读取操作人身份（user_id, role, bearer），三级回退：
     1) FastAPI 通道：runtime.config.configurable
     2) Studio 首跑：runtime.state（dict）
     3) Studio/平台 resume（runtime=None）：get_config().configurable 取 thread_id → 查缓存
     """
-    user_id = role = None
+    user_id = role = bearer = None
     if runtime is not None:
         cfg = (runtime.config or {}).get("configurable", {})
-        user_id, role = cfg.get("acting_user"), cfg.get("acting_role")
-        if user_id is None or role is None:
+        user_id, role, bearer = cfg.get("acting_user"), cfg.get("acting_role"), cfg.get("bearer")
+        if user_id is None or role is None or bearer is None:
             st = runtime.state
             vals = st if isinstance(st, dict) else getattr(st, "values", None) or {}
             user_id = user_id if user_id is not None else vals.get("acting_user")
             role = role if role is not None else vals.get("acting_role")
-    if user_id is None or role is None:
+            bearer = bearer if bearer is not None else vals.get("bearer")
+    if user_id is None or role is None or bearer is None:
         try:
             from langgraph.config import get_config
             cc = (get_config() or {}).get("configurable", {})
             user_id = user_id if user_id is not None else cc.get("acting_user")
             role = role if role is not None else cc.get("acting_role")
-            if (user_id is None or role is None) and cc.get("thread_id"):
+            bearer = bearer if bearer is not None else cc.get("bearer")
+            if (user_id is None or role is None or bearer is None) and cc.get("thread_id"):
                 cached = _identity_by_thread.get(cc["thread_id"])
                 if cached:
                     user_id = user_id if user_id is not None else cached[0]
                     role = role if role is not None else cached[1]
+                    bearer = bearer if bearer is not None else cached[2]
         except Exception:
             pass
-    return user_id, role
+    return user_id, role, bearer
 
 
 # 其余草稿字段的中文键名（给人看的展示用）
@@ -91,11 +95,11 @@ _KEY_LABELS: dict[str, str] = {
 }
 
 
-async def _dept_name(dept_id, acting_user=None, acting_role=None) -> str | None:
+async def _dept_name(dept_id, bearer=None) -> str | None:
     """部门 id -> 部门名（仅用于给人看的草稿展示）。取不到时返回 None。"""
     try:
         data = await backend_client.get_department_by_id(
-            int(dept_id), acting_user=acting_user, acting_role=acting_role
+            int(dept_id), bearer=bearer
         )
         if isinstance(data, dict):
             # DepartmentVO 的部门名字段是 deptName（兼容 name）
@@ -105,11 +109,11 @@ async def _dept_name(dept_id, acting_user=None, acting_role=None) -> str | None:
         return None
 
 
-async def _user_name(user_id, acting_user=None, acting_role=None) -> str | None:
+async def _user_name(user_id, bearer=None) -> str | None:
     """用户 id -> 姓名（realName / username，仅用于给人看的展示）。取不到时返回 None。"""
     try:
         data = await backend_client.get_user_by_id(
-            int(user_id), acting_user=acting_user, acting_role=acting_role
+            int(user_id), bearer=bearer
         )
         if isinstance(data, dict):
             return data.get("realName") or data.get("username")
@@ -118,7 +122,7 @@ async def _user_name(user_id, acting_user=None, acting_role=None) -> str | None:
         return None
 
 
-async def _human_draft(draft: dict, acting_user=None, acting_role=None) -> dict:
+async def _human_draft(draft: dict, bearer=None) -> dict:
     """把后台用的数字草稿转成全中文给人看的版本：
     分类/优先级/受理部门/来源转中文值，其余键名也统一转中文。
     返回新 dict，不修改入参。
@@ -134,7 +138,7 @@ async def _human_draft(draft: dict, acting_user=None, acting_role=None) -> dict:
             label = dict_service.priority_label(v)
             display["优先级"] = label if label is not None else v
         elif k == "deptId":
-            name = await _dept_name(v, acting_user=acting_user, acting_role=acting_role)
+            name = await _dept_name(v, bearer=bearer)
             display["受理部门"] = name if name is not None else v
         elif k == "source":
             label = dict_service.source_label(v)
@@ -210,7 +214,7 @@ async def query_tickets(
 ) -> str:
     """查询工单。用于根据关键词、状态、优先级、分类等条件检索工单列表。
     分类/优先级/状态可传中文标签或数字 id，由 dict_service 归一化为 Java 所需 id。"""
-    acting_user, acting_role = _acting(runtime)
+    acting_user, acting_role, bearer = _acting(runtime)
     # 归一化：中文标签或数字 id -> Java 需要的整数 id（从预热缓存取规则，无额外网络请求）
     category_id = await dict_service.resolve_category(category_id)
     priority_id = await dict_service.resolve_priority(priority_id)
@@ -223,8 +227,7 @@ async def query_tickets(
             category_id=category_id,
             page=page,
             page_size=page_size,
-            acting_user=acting_user,
-            acting_role=acting_role,
+            bearer=bearer,
         )
         records = data.get("records") or []
         if not records:
@@ -237,9 +240,9 @@ async def query_tickets(
 @tool(args_schema=GetTicketSchema)
 async def get_ticket(ticket_id: int, runtime: ToolRuntime = None) -> str:
     """查询工单详情。当用户给出工单ID想看具体信息时调用。"""
-    acting_user, acting_role = _acting(runtime)
+    acting_user, acting_role, bearer = _acting(runtime)
     try:
-        data = await backend_client.get_ticket(ticket_id, acting_user=acting_user, acting_role=acting_role)
+        data = await backend_client.get_ticket(ticket_id, bearer=bearer)
         return json.dumps(data, ensure_ascii=False)
     except backend_client.BackendError as e:
         return f"查询工单详情失败：{e}"
@@ -248,14 +251,14 @@ async def get_ticket(ticket_id: int, runtime: ToolRuntime = None) -> str:
 @tool(args_schema=DeleteTicketSchema)
 async def delete_ticket(ticket_id: int, runtime: ToolRuntime = None) -> str:
     """删除工单。当用户明确要求删除某个工单时调用。该操作为硬删除，不可恢复，仅管理员(ADMIN)可执行。"""
-    acting_user, acting_role = _acting(runtime)
+    acting_user, acting_role, bearer = _acting(runtime)
     if acting_role != "ADMIN":
         return "❌ 删除工单为管理员专属操作，当前角色无权限。"
 
     # 删除为不可逆高危操作，打断请用户确认（尽量带上工单标题便于核对）
     title = ""
     try:
-        info = await backend_client.get_ticket(ticket_id, acting_user=acting_user, acting_role=acting_role)
+        info = await backend_client.get_ticket(ticket_id, bearer=bearer)
         if isinstance(info, dict):
             title = info.get("title") or info.get("ticketNo") or ""
     except Exception:
@@ -277,7 +280,7 @@ async def delete_ticket(ticket_id: int, runtime: ToolRuntime = None) -> str:
     action = _interpret_decision(decision)
     if action == "confirm":
         try:
-            await backend_client.delete_ticket(ticket_id, acting_user=acting_user, acting_role=acting_role)
+            await backend_client.delete_ticket(ticket_id, bearer=bearer)
             return f"工单 {ticket_id} 已删除。"
         except backend_client.BackendError as e:
             return f"删除工单失败：{e}"
@@ -305,7 +308,7 @@ async def update_ticket(
     """更新工单基本信息。当用户要修改某工单的标题/描述/分类/优先级/受理部门/联系方式/位置/预计解决时间时调用。
     分类/优先级可传中文标签(如'硬件故障'/'高')或数字 id，由 dict_service 归一化。
     只传需要修改的字段；文本字段传空字符串可清空。"""
-    acting_user, acting_role = _acting(runtime)
+    acting_user, acting_role, bearer = _acting(runtime)
     # 归一化：中文标签或数字 id -> Java 需要的整数 id（复用预热缓存，无额外网络请求）
     category_id = await dict_service.resolve_category(category)
     priority_id = await dict_service.resolve_priority(priority)
@@ -330,7 +333,7 @@ async def update_ticket(
         payload["expectedResolveAt"] = expected_resolve_at
 
     # —— 人工确认打断（展示中文修改项，便于用户核对；只改用户指定的字段）——
-    human = await _human_draft(payload, acting_user=acting_user, acting_role=acting_role)
+    human = await _human_draft(payload, bearer=bearer)
     decision = interrupt({
         "type": "update_review",
         "ticket_id": ticket_id,
@@ -346,7 +349,7 @@ async def update_ticket(
     action = _interpret_decision(decision)
     if action == "confirm":
         try:
-            data = await backend_client.update_ticket(ticket_id, payload, acting_user=acting_user, acting_role=acting_role)
+            data = await backend_client.update_ticket(ticket_id, payload, bearer=bearer)
             return "工单信息已更新。" if not data else json.dumps(data, ensure_ascii=False)
         except backend_client.BackendError as e:
             return f"更新工单信息失败：{e}"
@@ -367,7 +370,7 @@ def _parse_dt(s) -> datetime | None:
         return None
 
 
-async def _fetch_all_tickets(acting_user, acting_role, category_id: Optional[int] = None) -> list:
+async def _fetch_all_tickets(acting_user, acting_role, bearer, category_id: Optional[int] = None) -> list:
     """分页拉取当前角色可见的全部工单（后端 DataScope 已按角色过滤）。page_size 上限 100。
     category_id 可选：仅拉该分类，缩小专长统计范围。"""
     all_records: list = []
@@ -375,7 +378,7 @@ async def _fetch_all_tickets(acting_user, acting_role, category_id: Optional[int
     while page <= max_pages:
         data = await backend_client.page_tickets(
             category_id=category_id,
-            page=page, page_size=page_size, acting_user=acting_user, acting_role=acting_role
+            page=page, page_size=page_size, bearer=bearer
         )
         if not isinstance(data, dict):
             break
@@ -424,8 +427,8 @@ async def list_sla_at_risk(threshold_minutes: Optional[int] = None, runtime: Too
     按当前角色自动圈定范围：主管=本部门待派单；处理人=分配给我的待处理/处理中；报障人=自己未闭环的工单。
     返回临期工单清单及建议动作（主管优先派单、处理人优先处理）。threshold_minutes 可自定义临期阈值（分钟），
     不传则默认规则：剩余时间 < 25% 解决SLA 或 < 2 小时（取较严）。"""
-    acting_user, acting_role = _acting(runtime)
-    records = await _fetch_all_tickets(acting_user, acting_role)
+    acting_user, acting_role, bearer = _acting(runtime)
+    records = await _fetch_all_tickets(acting_user, acting_role, bearer)
     if not records:
         return "当前没有可查看的工单。"
     candidates = _filter_sla_candidates(records, acting_role, acting_user)
@@ -465,12 +468,12 @@ async def list_sla_at_risk(threshold_minutes: Optional[int] = None, runtime: Too
 async def submit_ticket(ticket_id: int, runtime: ToolRuntime = None) -> str:
     """提交工单。当草稿态工单（由创建者本人创建）需要正式提交、进入待派单时调用。
     仅 DRAFT 草稿态 + 创建者本人/ADMIN 可提交（DRAFT→TO_ASSIGN）。"""
-    acting_user, acting_role = _acting(runtime)
+    acting_user, acting_role, bearer = _acting(runtime)
 
     # 提交会使工单由草稿进入待派单，打断请用户确认（best-effort 带标题便于核对）
     title = ""
     try:
-        info = await backend_client.get_ticket(ticket_id, acting_user=acting_user, acting_role=acting_role)
+        info = await backend_client.get_ticket(ticket_id, bearer=bearer)
         if isinstance(info, dict):
             title = info.get("title") or info.get("ticketNo") or ""
     except Exception:
@@ -491,7 +494,7 @@ async def submit_ticket(ticket_id: int, runtime: ToolRuntime = None) -> str:
     action = _interpret_decision(decision)
     if action == "confirm":
         try:
-            data = await backend_client.submit_ticket(ticket_id, acting_user=acting_user, acting_role=acting_role)
+            data = await backend_client.submit_ticket(ticket_id, bearer=bearer)
             if not data:
                 return "工单已提交（待派单）。"
             return json.dumps(data, ensure_ascii=False) + _sla_deadline_intro(data.get("priorityId"))
@@ -507,12 +510,12 @@ async def submit_ticket(ticket_id: int, runtime: ToolRuntime = None) -> str:
 @tool(args_schema=WithdrawTicketSchema)
 async def withdraw_ticket(ticket_id: int, runtime: ToolRuntime = None) -> str:
     """撤回工单。当用户（报障人）希望撤销自己创建、尚未被处理的工单时调用。撤回后工单进入 CANCELLED 终态。"""
-    acting_user, acting_role = _acting(runtime)
+    acting_user, acting_role, bearer = _acting(runtime)
 
     # 撤回会使工单进入 CANCELLED 终态，打断请用户确认（best-effort 带标题便于核对）
     title = ""
     try:
-        info = await backend_client.get_ticket(ticket_id, acting_user=acting_user, acting_role=acting_role)
+        info = await backend_client.get_ticket(ticket_id, bearer=bearer)
         if isinstance(info, dict):
             title = info.get("title") or info.get("ticketNo") or ""
     except Exception:
@@ -533,7 +536,7 @@ async def withdraw_ticket(ticket_id: int, runtime: ToolRuntime = None) -> str:
     action = _interpret_decision(decision)
     if action == "confirm":
         try:
-            data = await backend_client.withdraw_ticket(ticket_id, acting_user=acting_user, acting_role=acting_role)
+            data = await backend_client.withdraw_ticket(ticket_id, bearer=bearer)
             return "工单已撤回。" if not data else json.dumps(data, ensure_ascii=False)
         except backend_client.BackendError as e:
             return f"撤回工单失败：{e}"
@@ -549,13 +552,13 @@ async def recommend_assignee(ticket_id: int, runtime: ToolRuntime = None) -> str
     """派单前推荐最合适的处理人。当主管/管理员要派单但没想好派给谁时调用。
     基于：① 该工单所属部门的处理人(HANDLER)候选池；② 该工单分类的历史处理专长；
     ③ 各候选当前未闭环工单数(负载)。返回 Top-3 推荐 assigneeId 及姓名/专长分/负载，供派单确认时选择。"""
-    acting_user, acting_role = _acting(runtime)
+    acting_user, acting_role, bearer = _acting(runtime)
     if acting_role not in ("SUPERVISOR", "ADMIN"):
         return "推荐处理人仅主管/管理员可用，当前角色无派单权限。"
 
     # 取工单的部门与分类
     try:
-        ticket = await backend_client.get_ticket(ticket_id, acting_user=acting_user, acting_role=acting_role)
+        ticket = await backend_client.get_ticket(ticket_id, bearer=bearer)
     except backend_client.BackendError as e:
         return f"查询工单失败：{e}"
     if not isinstance(ticket, dict):
@@ -571,8 +574,7 @@ async def recommend_assignee(ticket_id: int, runtime: ToolRuntime = None) -> str
     while page <= 20:
         data = await backend_client.page_users(
             dept_id=dept_id, role="HANDLER", status=1,
-            page=page, page_size=page_size,
-            acting_user=acting_user, acting_role=acting_role,
+            page=page, page_size=page_size, bearer=bearer,
         )
         if not isinstance(data, dict):
             break
@@ -587,7 +589,7 @@ async def recommend_assignee(ticket_id: int, runtime: ToolRuntime = None) -> str
     handler_ids = {u.get("id") for u in handlers}
 
     # 历史专长 + 负载：该分类工单中，各处理人的已解决/已关闭计数 与 未闭环计数
-    hist = await _fetch_all_tickets(acting_user, acting_role, category_id=category_id)
+    hist = await _fetch_all_tickets(acting_user, acting_role, bearer, category_id=category_id)
     expertise = {hid: 0 for hid in handler_ids}
     load = {hid: 0 for hid in handler_ids}
     for t in hist or []:
@@ -628,11 +630,11 @@ async def assign_ticket(
 ) -> str:
     """派单。当主管/管理员要将工单指派给某位处理人（HANDLER）时调用。
     可同时做优先级终审：priority_id 可传中文标签(如'高')或数字 id，不传则沿用报障人申报的优先级。"""
-    acting_user, acting_role = _acting(runtime)
+    acting_user, acting_role, bearer = _acting(runtime)
     priority_resolved = await dict_service.resolve_priority(priority_id) if priority_id is not None else None
 
     # 派单为高影响操作，打断请用户确认（best-effort 带处理人姓名便于核对）
-    assignee_name = await _user_name(assignee_id, acting_user=acting_user, acting_role=acting_role)
+    assignee_name = await _user_name(assignee_id, bearer=bearer)
     priority_tip = ""
     if priority_resolved is not None:
         label = dict_service.priority_label(priority_resolved)
@@ -657,8 +659,7 @@ async def assign_ticket(
         try:
             data = await backend_client.assign_ticket(
                 ticket_id, assignee_id,
-                priority_id=priority_resolved, remark=remark,
-                acting_user=acting_user, acting_role=acting_role,
+                priority_id=priority_resolved, remark=remark, bearer=bearer,
             )
             return "工单已派单。" if not data else json.dumps(data, ensure_ascii=False)
         except backend_client.BackendError as e:
@@ -673,10 +674,10 @@ async def assign_ticket(
 @tool(args_schema=TransferDeptSchema)
 async def transfer_department(ticket_id: int, new_dept_id: int, runtime: ToolRuntime = None) -> str:
     """转部门。当主管/管理员需要将工单的受理部门变更到另一部门时调用（如该故障应由其他部门处理）。"""
-    acting_user, acting_role = _acting(runtime)
+    acting_user, acting_role, bearer = _acting(runtime)
 
     # 转部门为高影响操作，打断请用户确认（best-effort 带部门名便于核对）
-    new_dept_name = await _dept_name(new_dept_id, acting_user=acting_user, acting_role=acting_role)
+    new_dept_name = await _dept_name(new_dept_id, bearer=bearer)
     decision = interrupt({
         "type": "transfer_review",
         "ticket_id": ticket_id,
@@ -693,7 +694,7 @@ async def transfer_department(ticket_id: int, new_dept_id: int, runtime: ToolRun
     if action == "confirm":
         try:
             data = await backend_client.transfer_department(
-                ticket_id, new_dept_id, acting_user=acting_user, acting_role=acting_role
+                ticket_id, new_dept_id, bearer=bearer
             )
             return "工单已转部门。" if not data else json.dumps(data, ensure_ascii=False)
         except backend_client.BackendError as e:
@@ -708,9 +709,9 @@ async def transfer_department(ticket_id: int, new_dept_id: int, runtime: ToolRun
 @tool(args_schema=GetTicketHistorySchema)
 async def get_ticket_history(ticket_id: int, runtime: ToolRuntime = None) -> str:
     """查询工单操作历史。当用户想了解某工单的创建/修改/状态流转/派单/撤回等全程轨迹时调用。"""
-    acting_user, acting_role = _acting(runtime)
+    acting_user, acting_role, bearer = _acting(runtime)
     try:
-        data = await backend_client.get_ticket_history(ticket_id, acting_user=acting_user, acting_role=acting_role)
+        data = await backend_client.get_ticket_history(ticket_id, bearer=bearer)
         if not data:
             return "该工单暂无操作历史。"
         return json.dumps(data, ensure_ascii=False)
@@ -727,11 +728,10 @@ async def add_ticket_comment(
 ) -> str:
     """添加工单评论/备注。当处理人需要记录处理进展、或与报障人沟通时调用。
     is_internal=True 表示内部备注（仅处理人/主管/管理员可见，报障人不可见）；默认 False 对报障人可见。"""
-    acting_user, acting_role = _acting(runtime)
+    acting_user, acting_role, bearer = _acting(runtime)
     try:
         data = await backend_client.add_ticket_comment(
-            ticket_id, content, is_internal=bool(is_internal),
-            acting_user=acting_user, acting_role=acting_role,
+            ticket_id, content, is_internal=bool(is_internal), bearer=bearer,
         )
         return "评论已添加。" if not data else json.dumps(data, ensure_ascii=False)
     except backend_client.BackendError as e:
@@ -741,48 +741,52 @@ async def add_ticket_comment(
 @tool(args_schema=ListCommentsSchema)
 async def list_ticket_comments(ticket_id: int, runtime: ToolRuntime = None) -> str:
     """查询工单评论列表。当用户想查看某工单的所有沟通记录/处理备注时调用。"""
-    acting_user, acting_role = _acting(runtime)
+    acting_user, acting_role, bearer = _acting(runtime)
     try:
-        data = await backend_client.list_ticket_comments(ticket_id, acting_user=acting_user, acting_role=acting_role)
+        data = await backend_client.list_ticket_comments(ticket_id, bearer=bearer)
         if not data:
             return "该工单暂无评论。"
         return json.dumps(data, ensure_ascii=False)
     except backend_client.BackendError as e:
         return f"查询评论失败：{e}"
 
+
 @tool(args_schema=GetUserSchema)
 async def get_user(user_id: Optional[int] = None, runtime: ToolRuntime = None) -> str:
     """查询用户联系方式与归属部门。建单时用于自动补全联系电话/邮箱。
     不传 user_id 则查当前登录用户（操作人本人）。返回 JSON 含 realName/phone/email/deptId。"""
-    acting_user, acting_role = _acting(runtime)
+    acting_user, acting_role, bearer = _acting(runtime)
     uid = user_id if user_id is not None else acting_user
     if uid is None:
         return "无法确定要查询的用户：既未提供 user_id，当前也无登录用户上下文。"
     try:
-        data = await backend_client.get_user_by_id(uid, acting_user=acting_user, acting_role=acting_role)
+        data = await backend_client.get_user_by_id(uid, bearer=bearer)
         return json.dumps(data, ensure_ascii=False)
     except backend_client.BackendError as e:
         return f"查询用户失败：{e}"
 
+
 @tool(args_schema=GetDepartmentSchema)
 async def get_department(dept_id: int, runtime: ToolRuntime = None) -> str:
     """查询部门详情（含部门地址 location）。建单时把部门地址默认带为工单位置；也可确认受理部门。"""
-    acting_user, acting_role = _acting(runtime)
+    acting_user, acting_role, bearer = _acting(runtime)
     try:
-        data = await backend_client.get_department_by_id(dept_id, acting_user=acting_user, acting_role=acting_role)
+        data = await backend_client.get_department_by_id(dept_id, bearer=bearer)
         return json.dumps(data, ensure_ascii=False)
     except backend_client.BackendError as e:
         return f"查询部门失败：{e}"
 
+
 @tool(args_schema=ListDepartmentsSchema)
 async def list_departments(runtime: ToolRuntime = None) -> str:
     """查询所有部门（树形），建单时选择或确认受理部门。"""
-    acting_user, acting_role = _acting(runtime)
+    acting_user, acting_role, bearer = _acting(runtime)
     try:
-        data = await backend_client.list_all_departments(acting_user=acting_user, acting_role=acting_role)
+        data = await backend_client.list_all_departments(bearer=bearer)
         return json.dumps(data, ensure_ascii=False)
     except backend_client.BackendError as e:
         return f"查询部门列表失败：{e}"
+
 
 @tool(args_schema=CreateTicketSchema)
 async def create_ticket_draft(
@@ -800,7 +804,7 @@ async def create_ticket_draft(
 ) -> str:
     """创建工单：先由系统推断字段，再 human-in-the-loop 暂停请用户确认/修改，
     确认后才真正创建工单。所有建单都应通过本工具，以保证人工确认环节。"""
-    acting_user, acting_role = _acting(runtime)
+    acting_user, acting_role, bearer = _acting(runtime)
     category_id = await dict_service.resolve_category(category)
     priority_id = await dict_service.resolve_priority(priority)
     source_code = await dict_service.resolve_source(source) or "AGENT"
@@ -816,7 +820,7 @@ async def create_ticket_draft(
             draft[k] = v
 
     # —— 人工确认打断（展示中文草稿，便于用户核对）——
-    human = await _human_draft(draft, acting_user=acting_user, acting_role=acting_role)
+    human = await _human_draft(draft, bearer=bearer)
     decision = interrupt({
         "type": "draft_review",
         "draft": draft,            # 后台实际使用的数字草稿（技术视角）
@@ -832,7 +836,7 @@ async def create_ticket_draft(
     action = _interpret_decision(decision)
     if action == "confirm":
         try:
-            data = await backend_client.create_ticket(draft, acting_user=acting_user, acting_role=acting_role)
+            data = await backend_client.create_ticket(draft, bearer=bearer)
             return "工单已创建（草稿态）：" + json.dumps(data, ensure_ascii=False) + _sla_intro(data.get("priorityId"))
         except backend_client.BackendError as e:
             return f"创建工单失败：{e}"
@@ -841,4 +845,3 @@ async def create_ticket_draft(
 
     return (f"用户希望对草稿做如下修改：{decision}。\n"
             "请根据该修改意见调整对应字段后，再次调用 create_ticket_draft 提交，不要追问已明确的信息。")
-

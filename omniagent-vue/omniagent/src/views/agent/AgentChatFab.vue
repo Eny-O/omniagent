@@ -1,11 +1,9 @@
 <script setup lang="ts">
 import { ref, computed, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { useUserStore } from '@/stores/user'
 import { streamChat } from '@/api/agent'
 
 const route = useRoute()
-const userStore = useUserStore()
 
 // 仅在「我的保障」「工单列表页」「工单详情页」显示悬浮助手（其余页面不显示）
 const showFab = computed(() => {
@@ -54,8 +52,6 @@ async function runStream(opts: { message: string; resume: string | null }) {
       {
         message: opts.message,
         threadId: threadId.value,
-        userId: userStore.user?.id ?? 0,
-        actingRole: userStore.currentRole ?? '',
         resume: opts.resume,
       },
       {
@@ -84,7 +80,19 @@ async function runStream(opts: { message: string; resume: string | null }) {
           ai.info = undefined
         },
         onError: (e) => {
-          ai.text = `⚠️ 出错了：${e instanceof Error ? e.message : String(e)}`
+          // e 可能是 Error（网络/HTTP 异常）或 Agent 返回的 {message} 对象（error 事件帧）
+          let msg = '未知错误'
+          if (
+            e &&
+            typeof e === 'object' &&
+            'message' in e &&
+            typeof (e as { message?: unknown }).message === 'string'
+          ) {
+            msg = (e as { message: string }).message
+          } else if (e instanceof Error) {
+            msg = e.message
+          }
+          ai.text = `⚠️ 出错了：${msg}`
           ai.info = undefined
         },
       },

@@ -28,4 +28,5 @@ export interface LoginUserVO {
   status: number
   createdAt: string
   loginAt: string
+  token: string
 }

@@ -1,5 +1,7 @@
 // Agent SSE 流客户端：原生 fetch + ReadableStream 解析 SSE 帧。
 
+import { getToken } from '@/utils/token'
+
 // 直连 Agent 后端，不经 Java / Vite 代理。
 // 可用环境变量 VITE_AGENT_BASE 覆盖（部署到别的域名/端口时）。
 const AGENT_BASE = (import.meta.env.VITE_AGENT_BASE as string) || 'http://localhost:8000'
@@ -7,8 +9,6 @@ const AGENT_BASE = (import.meta.env.VITE_AGENT_BASE as string) || 'http://localh
 export interface ChatStreamPayload {
   message: string
   threadId: string
-  userId: number
-  actingRole: string
   resume?: string | null
 }
 
@@ -42,17 +42,20 @@ export async function streamChat(
 ): Promise<void> {
   const body = {
     message: payload.message,
-    user_id: payload.userId,
-    acting_role: payload.actingRole,
     thread_id: payload.threadId,
     resume: payload.resume ?? null,
   }
+
+  // 身份来自登录时存储的 JWT，随请求携带 Authorization: Bearer
+  const token = getToken()
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (token) headers['Authorization'] = `Bearer ${token}`
 
   let resp: Response
   try {
     resp = await fetch(`${AGENT_BASE}/api/agent/chat/stream`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(body),
       signal,
     })

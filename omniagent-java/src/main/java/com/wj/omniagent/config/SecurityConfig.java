@@ -3,7 +3,7 @@ package com.wj.omniagent.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wj.omniagent.common.enums.ErrorCodeEnum;
 import com.wj.omniagent.common.pojo.result.ResponseResult;
-import com.wj.omniagent.filter.MachineIdentityAuthenticationFilter;
+import com.wj.omniagent.common.security.JwtAuthenticationFilter;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
@@ -21,9 +21,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandler;
-import org.springframework.security.web.access.intercept.AuthorizationFilter;
-import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
-import org.springframework.security.web.context.SecurityContextRepository;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -32,11 +30,12 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
 /**
- * Spring Security 配置
+ * Spring Security 配置（无状态 JWT 方案）
  * <p>
- * 采用 Session/Cookie 方案：
  * - 禁用 CSRF（前后端分离，接口由 axios 调用）
- * - 登录/登出由自定义 /api/auth/* 接口处理
+ * - 登录 / 登出由自定义 /api/auth/* 接口处理
+ * - 身份一律来自 Authorization: Bearer（JwtAuthenticationFilter 验签）
+ * - 不再使用 Session / Cookie / X-API-Key
  * - 未认证返回 401 JSON，无权限返回 403 JSON
  */
 @Configuration
@@ -44,7 +43,7 @@ import java.nio.charset.StandardCharsets;
 public class SecurityConfig {
 
     /**
-     * 密码加密器：与 UserServiceImpl 共用同一个 Bean
+     * 密码加密器。
      */
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -52,7 +51,7 @@ public class SecurityConfig {
     }
 
     /**
-     * 认证管理器：供 AuthServiceImpl 手动调用登录认证
+     * 认证管理器：供 AuthServiceImpl 手动调用登录认证。
      */
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration configuration) throws Exception {
@@ -60,25 +59,14 @@ public class SecurityConfig {
     }
 
     /**
-     * SecurityContext 持久化仓库：使用 HttpSession，确保登录后 SecurityContext 随 Session 一起保存
-     */
-    @Bean
-    public SecurityContextRepository securityContextRepository() {
-        return new HttpSessionSecurityContextRepository();
-    }
-
-    /**
-     * CORS 配置：允许前端开发服务器跨域访问，并携带 Cookie/Session
+     * CORS 配置：允许前端开发服务器跨域；不再携带 Cookie（Bearer 自包含凭证）。
      */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        // Vue 开发服务器默认地址，生产环境可改为前端部署域名
         configuration.addAllowedOrigin("http://localhost:5173");
         configuration.addAllowedMethod("*");
         configuration.addAllowedHeader("*");
-        // 允许携带 Cookie（Session-Cookie）
-        configuration.setAllowCredentials(true);
         configuration.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
@@ -86,28 +74,24 @@ public class SecurityConfig {
         return source;
     }
 
+    /**
+     * JWT 认证过滤器。
+     */
     @Bean
-    public MachineIdentityAuthenticationFilter machineIdentityAuthenticationFilter() {
-        return new MachineIdentityAuthenticationFilter();
+    public JwtAuthenticationFilter jwtAuthenticationFilter() {
+        return new JwtAuthenticationFilter();
     }
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-                // 禁用 CSRF，前后端分离场景不适用
                 .csrf(AbstractHttpConfigurer::disable)
-
-                // 启用 CORS，使用上方定义的 CorsConfigurationSource
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-
-                // 使用 HttpSession 存储 SecurityContext，保证登录状态可恢复
-                .securityContext(context -> context.securityContextRepository(securityContextRepository()))
-
-                // 配置 URL 授权
+                // 无状态：每个请求必须自带 JWT，服务端不保存会话
+                .sessionManagement(session ->
+                        session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // 认证接口：登录放行，登出/当前用户需要认证
                         .requestMatchers("/api/auth/login").permitAll()
-                        // Swagger / Knife4j 文档资源放行
                         .requestMatchers(
                                 "/doc.html",
                                 "/webjars/**",
@@ -116,55 +100,34 @@ public class SecurityConfig {
                                 "/favicon.ico",
                                 "/error"
                         ).permitAll()
-
-                        // 其他所有接口需要认证
-                        .anyRequest().authenticated()
-                )
-
-                // 禁用 Spring Security 默认表单登录，使用自定义 /api/auth/login
+                        .anyRequest().authenticated())
                 .formLogin(AbstractHttpConfigurer::disable)
-
-                // 禁用默认 logout，使用自定义 /api/auth/logout
                 .logout(AbstractHttpConfigurer::disable)
-
-                // Session 策略：需要时才创建（登录成功后创建 Session）
-                .sessionManagement(session ->
-                        session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)
-                )
-
-                // 异常处理：返回统一 JSON
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint(authenticationEntryPoint())
-                        .accessDeniedHandler(accessDeniedHandler())
-                )
-                // Agent认证过滤器：在 AuthorizationFilter 之前
-                .addFilterBefore(machineIdentityAuthenticationFilter(), AuthorizationFilter.class);
+                        .accessDeniedHandler(accessDeniedHandler()))
+                // JWT 过滤器在用户名密码过滤器之前：Bearer 优先建立认证
+                .addFilterBefore(jwtAuthenticationFilter(), UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
 
     /**
-     * 未认证处理：返回 401 JSON
+     * 未认证处理：返回 401 JSON。
      */
     @Bean
     public AuthenticationEntryPoint authenticationEntryPoint() {
         return (request, response, authException) -> writeErrorResponse(
-                response,
-                HttpStatus.UNAUTHORIZED.value(),
-                ErrorCodeEnum.UNAUTHORIZED
-        );
+                response, HttpStatus.UNAUTHORIZED.value(), ErrorCodeEnum.UNAUTHORIZED);
     }
 
     /**
-     * 无权限处理：返回 403 JSON
+     * 无权限处理：返回 403 JSON。
      */
     @Bean
     public AccessDeniedHandler accessDeniedHandler() {
         return (request, response, accessDeniedException) -> writeErrorResponse(
-                response,
-                HttpStatus.FORBIDDEN.value(),
-                ErrorCodeEnum.FORBIDDEN
-        );
+                response, HttpStatus.FORBIDDEN.value(), ErrorCodeEnum.FORBIDDEN);
     }
 
     private void writeErrorResponse(HttpServletResponse response, int status, ErrorCodeEnum errorCodeEnum) throws IOException {

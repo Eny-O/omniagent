@@ -41,4 +41,7 @@ public class LoginUserVO {
 
     @Schema(description = "登录时间")
     private LocalDateTime loginAt;
+
+    @Schema(description = "登录令牌（JWT）；前端存储并于后续请求通过 Authorization: Bearer 携带")
+    private String token;
 }

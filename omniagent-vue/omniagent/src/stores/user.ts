@@ -4,6 +4,7 @@ import type { LoginUserVO } from '@/types/auth'
 import { getCurrentUser, login, logout } from '@/api/auth'
 import router from '@/router'
 import { ElMessage } from 'element-plus'
+import { setToken, clearToken } from '@/utils/token'
 
 /**
  * 用户状态 Store
@@ -45,6 +46,7 @@ export const useUserStore = defineStore('user', () => {
       return false
     }
     user.value = res.data
+    setToken(res.data.token ?? null)
     ElMessage.success('登录成功')
     return true
   }
@@ -75,6 +77,7 @@ export const useUserStore = defineStore('user', () => {
       await logout()
     } finally {
       user.value = null
+      clearToken()
       router.push('/login')
     }
   }

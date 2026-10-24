@@ -77,9 +77,12 @@ async def bootstrap_node(state: InputState) -> OverAllState:
         new_messages.append(HumanMessage(state["user_input"]))
     acting_user = state.get("acting_user", None)
     acting_role = state.get("acting_role", None)
-    _tid = (get_config() or {}).get("configurable", {}).get("thread_id")
+    _cfg = (get_config() or {}).get("configurable", {})
+    _tid = _cfg.get("thread_id")
+    bearer = _cfg.get("bearer")
     if _tid is not None:
-        _identity_by_thread[_tid] = (acting_user, acting_role)
+        # 缓存三元组 (user_id, role, bearer)，供工具在 resume 回退时读取
+        _identity_by_thread[_tid] = (acting_user, acting_role, bearer)
 
     return {
         "messages": new_messages,
