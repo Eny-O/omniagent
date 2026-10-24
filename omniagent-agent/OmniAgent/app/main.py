@@ -39,7 +39,7 @@ app.add_middleware(CORSMiddleware,
                    allow_methods=["*"],
                    allow_headers=["*"])
 # 挂载路由，统一前缀 /api（最终接口：/api/agent/chat）
-app.include_router(agent_router,prefix="/api")
+app.include_router(agent_router)
 
 
 @app.exception_handler(Exception)

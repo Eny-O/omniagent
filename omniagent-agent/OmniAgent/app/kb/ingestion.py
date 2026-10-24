@@ -14,7 +14,7 @@ from pathlib import Path
 from app.core.config import settings
 from app.core.database import get_pool
 from app.kb.embedding import embed_texts
-
+from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
 
 @dataclass
 class KBDocument:
@@ -41,32 +41,74 @@ def load_file(path: str, source: str | None = None) -> KBDocument:
 
 
 # ---------- splitter（切块，尽量在边界断开）----------
+# 路线 B：Markdown 感知切分。按这些标题层级切分并保留为上下文
+_HEADERS_TO_SPLIT_ON = [
+    ("#", "h1"),
+    ("##", "h2"),
+    ("###", "h3"),
+]
+
 
 def split_text(text: str, chunk_size: int, overlap: int) -> list[str]:
-    """滑动窗口切块：窗口大小 chunk_size，窗口间重叠 overlap，
-    优先在 '\\n\\n' / '。' / '. ' 处断开，避免切到句子中间。"""
-    text = text.strip()
-    if not text:
-        return []
-    step = max(1, chunk_size - overlap)
-    n = len(text)
+    """Markdown 感知两段式切分（路线 B：langchain-text-splitters）。
+
+    阶段1 MarkdownHeaderTextSplitter：按 #/##/### 把文档切成带层级上下文的块，
+        标题文字移入 metadata，随后拼回正文前缀（如「打印机脱机 > Troubleshooting Steps」）。
+    阶段2 RecursiveCharacterTextSplitter：仅对超过 chunk_size 的块，
+        按 \n\n / \n / 。/ . / 空格 递归细分，带 overlap。
+    纯文本（无标题）也能正常工作：阶段1 整篇作一块，阶段2 按长度切。
+    """
+    md_splitter = MarkdownHeaderTextSplitter(headers_to_split_on=_HEADERS_TO_SPLIT_ON)
+    md_splits = md_splitter.split_text(text)
+
+    r_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size,
+        chunk_overlap=overlap,
+        separators=["\n\n", "\n", "。", ".", " ", ""],
+        keep_separator=True,
+    )
+
     chunks: list[str] = []
-    start = 0
-    while start < n:
-        end = min(start + chunk_size, n)
-        piece = text[start:end]
-        if end < n:
-            cut = max(piece.rfind("\n\n"), piece.rfind("。"), piece.rfind(". "))
-            if cut > step // 2:                       # 只在该断点足够靠后时才切，避免太碎
-                end = start + cut + (2 if piece[cut:cut + 2] == "\n\n" else 1)
-                piece = text[start:end]
-        piece = piece.strip()
-        if piece:
-            chunks.append(piece)
-        if end >= n:
-            break
-        start = end - overlap
+    for piece in md_splits:
+        header_path = " > ".join(v for v in piece.metadata.values() if v)
+        body = piece.page_content.strip()
+        if not body:
+            continue
+        if len(body) <= chunk_size:
+            chunks.append(f"{header_path}\n\n{body}" if header_path else body)
+        else:
+            for sub in r_splitter.split_text(body):
+                sub = sub.strip()
+                if sub:
+                    chunks.append(f"{header_path}\n\n{sub}" if header_path else sub)
     return chunks
+
+
+# def split_text(text: str, chunk_size: int, overlap: int) -> list[str]:
+#     """滑动窗口切块：窗口大小 chunk_size，窗口间重叠 overlap，
+#     优先在 '\\n\\n' / '。' / '. ' 处断开，避免切到句子中间。"""
+#     text = text.strip()
+#     if not text:
+#         return []
+#     step = max(1, chunk_size - overlap)
+#     n = len(text)
+#     chunks: list[str] = []
+#     start = 0
+#     while start < n:
+#         end = min(start + chunk_size, n)
+#         piece = text[start:end]
+#         if end < n:
+#             cut = max(piece.rfind("\n\n"), piece.rfind("。"), piece.rfind(". "))
+#             if cut > step // 2:                       # 只在该断点足够靠后时才切，避免太碎
+#                 end = start + cut + (2 if piece[cut:cut + 2] == "\n\n" else 1)
+#                 piece = text[start:end]
+#         piece = piece.strip()
+#         if piece:
+#             chunks.append(piece)
+#         if end >= n:
+#             break
+#         start = end - overlap
+#     return chunks
 
 
 # ---------- 稳定标识 ----------
@@ -80,12 +122,13 @@ def _content_hash(content: str) -> str:
 
 
 # ---------- upsert（幂等核心）----------
-
+SPLITTER_VERSION = "2"
 async def ingest_document(doc: KBDocument) -> dict:
     pool = get_pool()
     doc_id = _doc_id(doc.source, doc.title)
     content_hash = _content_hash(doc.content)
-    meta_json = json.dumps(doc.meta or {})
+    meta = {"splitter_version": SPLITTER_VERSION, **(doc.meta or {})}
+    meta_json = json.dumps(meta)
 
     # 内容未变 → 跳过（不重复调 embedding、不重复写）
     row = await pool.fetchrow("SELECT content_hash FROM kb_docs WHERE doc_id=$1", doc_id)

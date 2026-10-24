@@ -2,6 +2,7 @@
 import { useRoute, useRouter } from 'vue-router'
 import { computed, onMounted } from 'vue'
 import { useUserStore } from '@/stores/user'
+import AgentChatFab from '@/views/agent/AgentChatFab.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -242,6 +243,19 @@ const handleMenuSelect = (path: string) => {
                 stroke-linejoin="round"
               />
             </svg>
+            <svg
+              v-else
+              class="menu-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <rect x="4" y="8" width="16" height="11" rx="2" stroke="currentColor" stroke-width="2" />
+              <path d="M12 8V4" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+              <circle cx="12" cy="3" r="1.5" fill="currentColor" />
+              <circle cx="9" cy="13" r="1.5" fill="currentColor" />
+              <circle cx="15" cy="13" r="1.5" fill="currentColor" />
+            </svg>
             <span class="menu-title">{{ item.title }}</span>
           </el-menu-item>
         </el-menu>
@@ -264,6 +278,8 @@ const handleMenuSelect = (path: string) => {
         <el-main class="layout-main">
           <RouterView />
         </el-main>
+        <!-- 全局悬浮 AI 助手：仅在「我的保障/工单列表/详情」页显示（内部按路由 v-show 控制） -->
+        <AgentChatFab />
       </el-container>
     </el-container>
   </div>

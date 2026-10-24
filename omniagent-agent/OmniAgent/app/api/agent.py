@@ -10,8 +10,8 @@ from fastapi import APIRouter
 from langgraph.errors import GraphInterrupt
 from pydantic import BaseModel
 from langgraph.types import Command
-
-from app.services.agent_service import agent
+from fastapi.responses import StreamingResponse
+from app.services.agent_service import agent, stream_run, stream_resume  # 改 import
 
 router = APIRouter()
 
@@ -36,37 +36,62 @@ def _cfg(req: ChatRequest) -> dict:
                              "acting_user": req.user_id, "acting_role": req.acting_role}}
 
 
-def _pending(agent, cfg) -> ChatResponse:
-    state = agent.get_state(cfg)
-    interrupts = []
-    for t in (state.tasks or []):
-        interrupts.extend(getattr(t, "interrupts", []) or [])
-    if interrupts:
-        p = interrupts[0].value if hasattr(interrupts[0], "value") else interrupts[0]
-        return ChatResponse(
-            reply=p.get("message", "请确认") if isinstance(p, dict) else str(p),
-            pending=True,
-            pending_type=p.get("type") if isinstance(p, dict) else None,
-            draft=p.get("draft") if isinstance(p, dict) else None,
-        )
-    return ChatResponse(reply="（等待用户输入）")
+# 阻塞式Chat
+# def _pending(agent, cfg) -> ChatResponse:
+#     state = agent.get_state(cfg)
+#     interrupts = []
+#     for t in (state.tasks or []):
+#         interrupts.extend(getattr(t, "interrupts", []) or [])
+#     if interrupts:
+#         p = interrupts[0].value if hasattr(interrupts[0], "value") else interrupts[0]
+#         return ChatResponse(
+#             reply=p.get("message", "请确认") if isinstance(p, dict) else str(p),
+#             pending=True,
+#             pending_type=p.get("type") if isinstance(p, dict) else None,
+#             draft=p.get("draft") if isinstance(p, dict) else None,
+#         )
+#     return ChatResponse(reply="（等待用户输入）")
+#
+#
+# @router.post("/api/agent/chat")
+# async def chat(req: ChatRequest) -> ChatResponse:
+#     cfg = _cfg(req)
+#     if req.resume is not None:                       # resume 模式：用户已回复确认/修改
+#         try:
+#             res = await agent.ainvoke(Command(resume=req.resume), config=cfg)
+#         except GraphInterrupt:
+#             return _pending(agent, cfg)
+#         return ChatResponse(reply=res["response"])
+#
+#     try:
+#         res = await agent.ainvoke(
+#             {"user_input": req.message, "acting_user": req.user_id, "acting_role": req.acting_role},
+#             config=cfg,
+#         )
+#     except GraphInterrupt:
+#         return _pending(agent, cfg)
+#     return ChatResponse(reply=res["response"])
 
 
-@router.post("/api/agent/chat")
-async def chat(req: ChatRequest) -> ChatResponse:
+@router.post("/api/agent/chat/stream")
+async def chat_stream(req: ChatRequest):
     cfg = _cfg(req)
-    if req.resume is not None:                       # resume 模式：用户已回复确认/修改
-        try:
-            res = await agent.ainvoke(Command(resume=req.resume), config=cfg)
-        except GraphInterrupt:
-            return _pending(agent, cfg)
-        return ChatResponse(reply=res["response"])
 
-    try:
-        res = await agent.ainvoke(
-            {"user_input": req.message, "acting_user": req.user_id, "acting_role": req.acting_role},
-            config=cfg,
-        )
-    except GraphInterrupt:
-        return _pending(agent, cfg)
-    return ChatResponse(reply=res["response"])
+    async def event_gen():
+        if req.resume is not None:
+            async for frame in stream_resume(req.resume, cfg):
+                yield frame
+        else:
+            async for frame in stream_run(
+                    {"user_input": req.message,
+                     "acting_user": req.user_id,
+                     "acting_role": req.acting_role},
+                    cfg,
+            ):
+                yield frame
+
+    return StreamingResponse(
+        event_gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

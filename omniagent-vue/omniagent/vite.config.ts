@@ -32,6 +32,13 @@ export default defineConfig({
         target: 'http://localhost:8080',
         changeOrigin: true,
       },
+      // 前端 /agent/* 同源代理到 Agent(8000)，与 /api->8080 范式一致。
+      // rewrite 必须剥掉开头的 /agent，否则 Agent 收到 /agent/api/... 会 404。
+      '/agent': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/agent/, ''),
+      },
     },
   },
 })
