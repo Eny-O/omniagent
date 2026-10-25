@@ -8,8 +8,6 @@ from fastapi.responses import JSONResponse
 from app.core.database import init_pool, close_pool
 
 
-
-
 #  启动事件 lifespan —— ≈ @PostConstruct / ApplicationRunner
 # 应用启动时初始化一次的东西：LLM 客户端、读取配置、预热字典缓存：
 @asynccontextmanager
@@ -53,7 +51,7 @@ app.add_middleware(CORSMiddleware,
 # 挂载路由，统一前缀 /api（最终接口：/api/agent/chat）
 app.include_router(agent_router)
 
-
+# 全局异常处理：返回 JSON 响应（500 内部错误）
 @app.exception_handler(Exception)
 async def handle_exception(req: Request, exc: Exception):
     return JSONResponse(status_code=500, content={"code": "500", "message": str(exc)})

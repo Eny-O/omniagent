@@ -59,6 +59,9 @@ class OutputState(TypedDict):
 
 async def bootstrap_node(state: InputState) -> OverAllState:
     """初始化状态，加载字典，添加 SystemMessage。"""
+    # 以下两行是"双模初始化"，请勿删除：
+    # 生产环境由 main.py lifespan 在应用启动时已做过（幂等，这里命中守卫→纯 no-op）；
+    # 但在 LangSmith 独立测图时 lifespan 不运行，靠这两行让图能自举初始化后跑通。
     try:
         await dict_service.ensure_loaded()
     except Exception as e:

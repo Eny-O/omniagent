@@ -56,7 +56,9 @@ request.interceptors.response.use(
     const res = response.data as ApiResponse
     const code = String(res.code)
 
-    if (code !== '200') {
+    // 会话恢复等静默请求：不弹全局错误提示
+    const silent = (response.config as { silent?: boolean }).silent === true
+    if (code !== '200' && !silent) {
       ElMessage.error(res.message || '请求失败')
     }
 
@@ -65,6 +67,13 @@ request.interceptors.response.use(
   },
   (error: unknown) => {
     let msg = '请求失败'
+
+    // 静默请求：不弹全局错误提示（如路由守卫的会话恢复 401）
+    const silent =
+      error &&
+      typeof error === 'object' &&
+      'config' in error &&
+      (error.config as { silent?: boolean } | undefined)?.silent === true
 
     if (
       error &&
@@ -87,7 +96,7 @@ request.interceptors.response.use(
       }
     }
 
-    ElMessage.error(msg)
+    if (!silent) ElMessage.error(msg)
     return Promise.reject(new Error(msg))
   },
 )

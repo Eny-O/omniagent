@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, onUnmounted } from 'vue'
+import { ref, computed, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { streamChat } from '@/api/agent'
+import { streamChat, checkHealth } from '@/api/agent'
 
 const route = useRoute()
 
@@ -39,14 +39,17 @@ function pushAi(): number {
   return messages.value.length - 1
 }
 
-async function runStream(opts: { message: string; resume: string | null }) {
+async function runStream(
+  opts: { message: string; resume: string | null },
+  aiIdx?: number,
+) {
   // 取消上一条未完成的流，避免并发叠加
   abortCtrl?.abort()
   abortCtrl = new AbortController()
   busy.value = true
 
-  const aiIdx = pushAi()
-  const ai = messages.value[aiIdx] // 经响应式代理访问，ai.text += 才会触发重渲染
+  const idx = aiIdx ?? pushAi()
+  const ai = messages.value[idx]! // 经响应式代理访问，ai.text += 才会触发重渲染
   try {
     await streamChat(
       {
@@ -117,6 +120,43 @@ function confirmAction(value: string) {
   modifyText.value = ''
   void runStream({ message: '', resume: value })
 }
+
+// 面板首次展开时主动问候：先探活 /healthz 确认 AI 助手可用，再让 AI 自我介绍，降低用户提问门槛
+const INTRO_PROMPT =
+  '请用简洁、友好的中文向用户介绍你自己，以及你在这个工单系统里能帮用户做什么' +
+  '（例如：创建/查询/派单/转部门工单，以及查询公司制度、操作方法等知识库问答）。' +
+  '最后给出 3 个示例提问，方便用户直接复制提问。使用自然段落与换行，不要使用 markdown 标题或代码块。'
+
+const introSent = ref(false)
+async function introduce() {
+  if (introSent.value) return
+  introSent.value = true
+  busy.value = true
+  const aiIdx = pushAi()
+  const ai = messages.value[aiIdx]!
+  ai.info = '正在连接 AI 助手…'
+  try {
+    const healthy = await checkHealth()
+    if (!healthy) {
+      ai.text = '⚠️ AI 助手暂时不可用（服务未就绪），请稍后重试。'
+      ai.info = undefined
+      return
+    }
+    ai.info = 'AI 助手已就绪，正在生成介绍…'
+    // 复用 runStream 写入同一个气泡，不展示用户气泡
+    await runStream({ message: INTRO_PROMPT, resume: null }, aiIdx)
+  } catch (e) {
+    ai.text = `⚠️ 出错了：${e instanceof Error ? e.message : String(e)}`
+    ai.info = undefined
+  } finally {
+    busy.value = false
+  }
+}
+
+// 面板首次展开触发问候；关闭后再打开不再重复
+watch(open, (val) => {
+  if (val) introduce()
+})
 
 onUnmounted(() => {
   abortCtrl?.abort()

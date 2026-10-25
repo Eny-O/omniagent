@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useRoute, useRouter } from 'vue-router'
-import { computed, onMounted } from 'vue'
+import { computed } from 'vue'
 import { useUserStore } from '@/stores/user'
 import AgentChatFab from '@/views/agent/AgentChatFab.vue'
 
@@ -15,13 +15,6 @@ const activeMenu = computed(() => {
   return p
 })
 const currentUserName = computed(() => userStore.user?.realName || userStore.user?.username || '未登录')
-
-onMounted(() => {
-  // 页面刷新后如果 Pinia 中没有用户信息，尝试从后端 Session 恢复
-  if (!userStore.isLoggedIn) {
-    userStore.fetchCurrentUser()
-  }
-})
 
 const handleLogout = () => {
   userStore.doLogout()

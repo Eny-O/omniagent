@@ -128,3 +128,23 @@ export async function streamChat(
     handlers.onError?.(e)
   }
 }
+
+/**
+ * 探活 Agent 后端（GET /healthz），判断 AI 助手是否可用。
+ * 仅当核心依赖就绪（持久化 checkpointer + DeepSeek 配置）才返回 true；
+ * KB 向量库未就绪仅影响知识库问答，不算整体不可用。
+ * 后端进程不可达（网络错误）也返回 false。
+ */
+export async function checkHealth(): Promise<boolean> {
+  try {
+    const resp = await fetch(`${AGENT_BASE}/healthz`, { method: 'GET' })
+    if (!resp.ok) return false
+    const data = (await resp.json()) as { checks?: Record<string, string> }
+    const checks = data.checks || {}
+    return (
+      checks.pg_checkpointer === 'ready' && checks.deepseek_config === 'ready'
+    )
+  } catch {
+    return false
+  }
+}

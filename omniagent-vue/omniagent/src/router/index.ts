@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useUserStore } from '@/stores/user'
+import { getToken } from '@/utils/token'
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -64,6 +65,8 @@ router.beforeEach(async (to) => {
   // 未登录：登录页直接放行；其余先确认 Session 是否有效
   if (!userStore.isLoggedIn) {
     if (to.path === '/login') return true
+    // 无 token：直接跳转登录，避免对 /auth/me 发一次注定 401 的请求（登录页误弹「认证失败」）
+    if (!getToken()) return '/login'
     try {
       const ok = await userStore.fetchCurrentUser()
       if (!ok) return '/login'

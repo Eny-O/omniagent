@@ -20,5 +20,6 @@ export const logout = async (): Promise<ResponseResult<void>> => {
  * 获取当前登录用户信息
  */
 export const getCurrentUser = async (): Promise<ResponseResult<LoginUserVO>> => {
-  return await request.get('/auth/me')
+  // silent：会话恢复属预期内的鉴权试探，401 时由路由守卫静默处理，不弹错误提示
+  return await request.get('/auth/me', { silent: true })
 }
