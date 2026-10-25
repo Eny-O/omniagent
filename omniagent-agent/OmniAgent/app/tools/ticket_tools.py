@@ -266,14 +266,12 @@ async def delete_ticket(ticket_id: int, runtime: ToolRuntime = None) -> str:
 
     decision = interrupt({
         "type": "delete_review",
-        "ticket_id": ticket_id,
+        "title": f"确认删除工单 #{ticket_id}",
         "message": (
             f"即将【硬删除】工单 #{ticket_id}"
             + (f"（{title}）" if title else "")
             + "，此操作不可恢复。\n"
-            + "- 点击「确认」按钮执行删除；\n"
-            + "- 点击「取消」按钮放弃本次删除；\n"
-            + "- 或在下方输入框填写其他要执行的操作。\n"
+            + "点击「确认」执行删除；点击「取消」放弃本次删除；或在下方输入框填写其他要执行的操作。"
         ),
     })
 
@@ -332,18 +330,16 @@ async def update_ticket(
     if expected_resolve_at is not None:
         payload["expectedResolveAt"] = expected_resolve_at
 
-    # —— 人工确认打断（展示中文修改项，便于用户核对；只改用户指定的字段）——
+    # —— 人工确认打断（结构化展示中文修改项，便于用户核对；只改用户指定的字段）——
     human = await _human_draft(payload, bearer=bearer)
+    fields = [{"label": k, "value": v} for k, v in human.items()]
     decision = interrupt({
         "type": "update_review",
-        "ticket_id": ticket_id,
-        "changes": payload,         # 后台实际使用的数字变更（技术视角）
-        "human_changes": human,     # 给人看的中文变更
-        "message": f"即将修改工单 #{ticket_id}，请确认以下变更项：\n"
-                   f"- 点击「确认」按钮执行修改；\n"
-                   f"- 点击「取消」按钮放弃本次修改；\n"
-                   f"- 或在下方输入框填写要调整的内容。\n"
-                   + json.dumps(human, ensure_ascii=False, indent=2),
+        "title": f"请确认工单 #{ticket_id} 的修改",
+        "message": "请核对以下变更项。点击「确认」执行修改；"
+                   "点击「取消」放弃本次修改；"
+                   "或在下方输入框填写要调整的内容。",
+        "fields": fields,
     })
 
     action = _interpret_decision(decision)
@@ -481,13 +477,11 @@ async def submit_ticket(ticket_id: int, runtime: ToolRuntime = None) -> str:
 
     decision = interrupt({
         "type": "submit_review",
-        "ticket_id": ticket_id,
+        "title": f"确认提交工单 #{ticket_id}",
         "message": (
             f"即将提交工单 #{ticket_id}" + (f"（{title}）" if title else "")
             + "，提交后将由草稿进入待派单（TO_ASSIGN），由主管派单后进入待处理（PENDING），再由处理人受理。\n"
-            + "- 点击「确认」按钮执行提交；\n"
-            + "- 点击「取消」按钮放弃本次提交；\n"
-            + "- 或在下方输入框填写其他要执行的操作。\n"
+            + "点击「确认」执行提交；点击「取消」放弃本次提交；或在下方输入框填写其他要执行的操作。"
         ),
     })
 
@@ -523,13 +517,11 @@ async def withdraw_ticket(ticket_id: int, runtime: ToolRuntime = None) -> str:
 
     decision = interrupt({
         "type": "withdraw_review",
-        "ticket_id": ticket_id,
+        "title": f"确认撤回工单 #{ticket_id}",
         "message": (
             f"即将撤回工单 #{ticket_id}" + (f"（{title}）" if title else "")
             + "，撤回后工单将进入 CANCELLED 终态，不可再处理。\n"
-            + "- 点击「确认」按钮执行撤回；\n"
-            + "- 点击「取消」按钮放弃本次撤回；\n"
-            + "- 或在下方输入框填写其他要执行的操作。\n"
+            + "点击「确认」执行撤回；点击「取消」放弃本次撤回；或在下方输入框填写其他要执行的操作。"
         ),
     })
 
@@ -641,16 +633,11 @@ async def assign_ticket(
         priority_tip = f"，优先级终审为「{label or priority_resolved}」"
     decision = interrupt({
         "type": "assign_review",
-        "ticket_id": ticket_id,
-        "assignee_id": assignee_id,
-        "priority_id": priority_resolved,
-        "remark": remark,
+        "title": f"确认派单（工单 #{ticket_id}）",
         "message": (
             f"即将派单：工单 #{ticket_id} 指派给处理人「{assignee_name or assignee_id}」{priority_tip}。"
             + (f"\n备注：{remark}" if remark else "") + "\n"
-            + "- 点击「确认」按钮执行派单；\n"
-            + "- 点击「取消」按钮放弃本次派单；\n"
-            + "- 或在下方输入框填写其他要执行的操作。\n"
+            + "点击「确认」执行派单；点击「取消」放弃本次派单；或在下方输入框填写其他要执行的操作。"
         ),
     })
 
@@ -680,13 +667,10 @@ async def transfer_department(ticket_id: int, new_dept_id: int, runtime: ToolRun
     new_dept_name = await _dept_name(new_dept_id, bearer=bearer)
     decision = interrupt({
         "type": "transfer_review",
-        "ticket_id": ticket_id,
-        "new_dept_id": new_dept_id,
+        "title": f"确认转部门（工单 #{ticket_id}）",
         "message": (
             f"即将把工单 #{ticket_id} 的受理部门转至「{new_dept_name or new_dept_id}」。\n"
-            f"- 点击「确认」按钮执行转部门；\n"
-            f"- 点击「取消」按钮放弃本次转部门；\n"
-            f"- 或在下方输入框填写其他要执行的操作。\n"
+            f"点击「确认」执行转部门；点击「取消」放弃本次转部门；或在下方输入框填写其他要执行的操作。"
         ),
     })
 
@@ -819,17 +803,16 @@ async def create_ticket_draft(
         if v is not None:
             draft[k] = v
 
-    # —— 人工确认打断（展示中文草稿，便于用户核对）——
+    # —— 人工确认打断（结构化展示中文草稿，便于用户核对）——
     human = await _human_draft(draft, bearer=bearer)
+    fields = [{"label": k, "value": v} for k, v in human.items()]
     decision = interrupt({
         "type": "draft_review",
-        "draft": draft,            # 后台实际使用的数字草稿（技术视角）
-        "human_draft": human,      # 给人看的中文草稿
-        "message": "请确认以下工单草稿：\n"
-                   "- 点击「确认」按钮直接建单；\n"
-                   "- 点击「取消」按钮放弃本次创建；\n"
-                   "- 或在下方输入框填写要修改的内容（将据此调整后再建单）。\n"
-                   + json.dumps(human, ensure_ascii=False, indent=2),
+        "title": "请确认工单草稿",
+        "message": "请核对以下工单信息。点击「确认」直接建单；"
+                   "点击「取消」放弃本次创建；"
+                   "或在下方输入框填写要修改的内容（将据此调整后再建单）。",
+        "fields": fields,
     })
 
     # —— 恢复：按前端三态判定执行 ——

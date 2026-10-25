@@ -8,7 +8,7 @@ from psycopg_pool import AsyncConnectionPool
 from langgraph.constants import START, END
 from langgraph.graph import MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode
-from langchain_core.messages import HumanMessage, SystemMessage, AIMessageChunk,AIMessage
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessageChunk, AIMessage
 
 from app.core.config import settings
 from app.core.database import init_pool
@@ -214,19 +214,17 @@ async def kb_answer_node(state: OverAllState) -> OverAllState:
     hits = [h for h in (state.get("kb_hits") or []) if (h.get("score") or 0) >= threshold]
 
     # 低分兜底：意图判为知识问答，但检索结果都不达标 → 引导建单/人工，避免误给差答案
+    # 低分只有结论性引导，不再重复下发 kb_text（前端 kb_deflect 已直接展示）
     if not hits:
-        writer({"stage": "kb_deflect",
-                "message": "未在知识库中找到足够相关的答案，建议创建工单或联系人工。"})
-        answer = ("未在知识库中找到与此相关的答案。\n"
-                  "你可以直接告诉我具体故障现象，我将为你创建工单；"
-                  "或联系对应系统的人工支持。")
-        for seg in re.split(r"(?<=[。！？\n])", answer):
-            if seg:
-                writer({"stage": "kb_text", "message": seg})
-        return {"messages": [answer], "deflect": True}
+        msg = ("未在知识库中找到与此足够相关的答案。\n"
+               "你可以直接告诉我具体故障现象，我将为你创建工单；"
+               "或联系对应系统的人工支持。")
+        writer({"stage": "kb_deflect", "message": msg})
+        return {"messages": [msg], "deflect": True}
 
-    writer({"stage": "kb_deflect", "message": "已为你匹配知识库答案，正在整理…"})
-    lines = ["（根据知识库为你解答）\n"]
+    # 命中：先给匹配提示（前端作为可见引导），再逐句下发纯答案正文（不再重复引导）
+    writer({"stage": "kb_deflect", "message": "已为你匹配到相关知识库内容，正在整理…"})
+    lines = []
     for i, h in enumerate(hits, 1):
         score = h.get("score")
         score_str = f"{score:.3f}" if isinstance(score, (int, float)) else "?"
@@ -341,6 +339,12 @@ async def stream_run(req_input: dict, config: dict):
     ):
         if mode == "messages":
             chunk, _metadata = data
+            # 仅展现 ReAct 主推理节点(execute_node)的用户可见文本。
+            # 重要：stream_mode="messages" 会捕获【所有】节点内部的 LLM 输出，
+            # 包括 intent_node 的意图分类 LLM（其输出是 {"intent":..,"reason":..} 的内部分类 JSON）。
+            # 若不过滤会泄露进对话气泡，故按来源节点过滤，只放行 execute_node。
+            if _metadata.get("langgraph_node") != "execute_node":
+                continue
             # 只把 AI 的 token 分块当打字机文本；工具结果等其它消息不进气泡
             if isinstance(chunk, AIMessageChunk):
                 text = chunk.content if isinstance(chunk.content, str) else "".join(
@@ -393,6 +397,8 @@ async def _emit_final(config: dict):
         payload["confirm_value"] = "yes"
         payload["reject_value"] = "no"
         payload["thread_id"] = (config or {}).get("configurable", {}).get("thread_id")
+        payload.setdefault("title", "请确认")
+        payload.setdefault("fields", [])
         yield f"event: need_confirm\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
         return
     final_text = state.values.get("response", "") if state.values else ""

@@ -17,7 +17,7 @@ router = APIRouter()
 
 
 class ChatRequest(BaseModel):
-    message: str = Field(min_length=1, max_length=4000)
+    message: str = Field(default="", max_length=4000)
     thread_id: str = Field(min_length=1, max_length=128)
     resume: str | None = None
 
@@ -51,6 +51,10 @@ async def chat_stream(req: ChatRequest, request: Request):
     uid = payload.get("uid")
     role = payload.get("role")
     cfg = _cfg(uid, role, token, req.thread_id)
+
+    # resume（确认/恢复）场景 message 允许为空；非 resume 的首次提问必须带内容
+    if req.resume is None and not req.message.strip():
+        return _error_stream("提问内容不能为空")
 
     async def event_gen():
         try:

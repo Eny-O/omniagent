@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onUnmounted, watch } from 'vue'
+import { ref, computed, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { streamChat, checkHealth } from '@/api/agent'
 
@@ -27,6 +27,24 @@ const messages = ref<ChatMsg[]>([])
 const busy = ref(false)
 const threadId = ref(`chat-${Date.now()}`)
 let abortCtrl: AbortController | null = null
+
+// 自动滚动：仅当用户停留在底部时才跟随新内容，避免长输出把视野顶上去
+const msgListRef = ref<HTMLElement | null>(null)
+let stickToBottom = true
+function onScroll() {
+  const el = msgListRef.value
+  if (!el) return
+  stickToBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 48
+}
+function scrollToBottom() {
+  const el = msgListRef.value
+  if (el && stickToBottom) el.scrollTop = el.scrollHeight
+}
+// 消息条数或总字数变化（流式追加 token 也会触发）后，将列表滚到底部
+watch(
+  () => [messages.value.length, messages.value.reduce((s, m) => s + m.text.length, 0)],
+  () => nextTick(scrollToBottom),
+)
 
 function newId(): number {
   return Date.now() + Math.floor(Math.random() * 1000)
@@ -63,11 +81,14 @@ async function runStream(
           ai.info = undefined
         },
         onInfo: (info) => {
-          // kb_text：KB 偏转答案的逐句流式文本
-          // answer_token：ReAct 主推理节点逐 token 流式文本
-          // 两者都直接追加到气泡，实现打字机效果
-          if (info.stage === 'kb_text' || info.stage === 'answer_token') {
-            ai.text += info.message
+          // kb_text / answer_token：正文逐句流式，追加到气泡打字机呈现
+          // kb_deflect：KB 偏转的引导/结论提示（如"已为你匹配…正在整理…"），
+          //   也必须作为可见正文追加（否则会被紧随的 kb_text 瞬间清空、info-bar 来不及渲染）
+          if (info.stage === 'kb_text' || info.stage === 'answer_token' || info.stage === 'kb_deflect') {
+            if (info.message) {
+              if (ai.text && !ai.text.endsWith('\n')) ai.text += '\n'
+              ai.text += info.message
+            }
             ai.info = undefined
           } else {
             ai.info = info.message
@@ -115,10 +136,38 @@ function send() {
 }
 
 function confirmAction(value: string) {
-  const ai = messages.value.find((m) => m.confirm)
-  if (ai) ai.confirm = undefined
-  modifyText.value = ''
-  void runStream({ message: '', resume: value })
+  // 复用带确认卡的气泡承载恢复结果，避免「确认后留下空白气泡」
+  const idx = messages.value.findIndex((m) => m.confirm)
+  if (idx >= 0) {
+    const ai = messages.value[idx]!
+    ai.confirm = undefined
+    ai.info = undefined
+    ai.text = '' // 清空（可能为空或短暂叙述），由恢复结果填充，杜绝空白框
+    void runStream({ message: '', resume: value }, idx)
+  } else {
+    modifyText.value = ''
+    void runStream({ message: '', resume: value })
+  }
+}
+
+// 从 need_confirm 载荷中安全提取结构化字段列表（建单/改单用），其它打断类型为空
+function confirmFields(
+  c: Record<string, unknown> | undefined,
+): { label: string; value: string }[] {
+  const f = c ? c['fields'] : undefined
+  if (Array.isArray(f)) {
+    return f.filter(
+      (x) => x && typeof x === 'object' && 'label' in x && 'value' in x,
+    ) as { label: string; value: string }[]
+  }
+  return []
+}
+
+// 发送修改意见：仅在有内容时触发
+function sendModify() {
+  const text = modifyText.value.trim()
+  if (!text) return
+  confirmAction(text)
 }
 
 // 面板首次展开时主动问候：先探活 /healthz 确认 AI 助手可用，再让 AI 自我介绍，降低用户提问门槛
@@ -172,13 +221,24 @@ onUnmounted(() => {
           <span class="fab-title">AI 助手</span>
           <button class="fab-close" type="button" @click="open = false" aria-label="关闭">×</button>
         </div>
-        <div class="msg-list">
+        <div class="msg-list" ref="msgListRef" @scroll="onScroll">
           <div v-for="m in messages" :key="m.id" :class="['row', m.role]">
             <div class="bubble">
               <div v-if="m.info" class="info-bar">⏳ {{ m.info }}</div>
               <div v-if="m.text" class="text">{{ m.text }}</div>
               <div v-if="m.confirm" class="confirm-card">
-                <div class="confirm-msg">{{ (m.confirm.message as string) || '需要你确认' }}</div>
+                <div class="confirm-title">{{ (m.confirm.title as string) || '请确认' }}</div>
+                <div class="confirm-msg">{{ (m.confirm.message as string) || '请核对信息后确认。' }}</div>
+                <div class="confirm-fields" v-if="confirmFields(m.confirm).length">
+                  <div
+                    class="confirm-field"
+                    v-for="f in confirmFields(m.confirm)"
+                    :key="f.label"
+                  >
+                    <span class="field-label">{{ f.label }}</span>
+                    <span class="field-value">{{ f.value }}</span>
+                  </div>
+                </div>
                 <div class="confirm-actions">
                   <el-button
                     type="primary"
@@ -192,8 +252,21 @@ onUnmounted(() => {
                   </el-button>
                 </div>
                 <div class="confirm-modify">
-                  <el-input v-model="modifyText" size="small" placeholder="或输入修改意见后发送" />
-                  <el-button size="small" @click="confirmAction(modifyText || 'modify')">发送修改</el-button>
+                  <el-input
+                    v-model="modifyText"
+                    size="small"
+                    placeholder="需要修改？输入意见后发送"
+                    @keyup.enter="sendModify"
+                  />
+                  <el-button
+                    size="small"
+                    type="primary"
+                    plain
+                    :disabled="!modifyText.trim()"
+                    @click="sendModify"
+                  >
+                    发送修改
+                  </el-button>
                 </div>
               </div>
             </div>
@@ -266,8 +339,9 @@ onUnmounted(() => {
   position: fixed;
   right: 24px;
   bottom: 92px;
-  width: 380px;
-  height: min(540px, 72vh);
+  width: 460px;
+  max-width: 94vw;
+  height: min(680px, 86vh);
   display: flex;
   flex-direction: column;
   background: #fff;
@@ -325,7 +399,7 @@ onUnmounted(() => {
 }
 
 .bubble {
-  max-width: 80%;
+  max-width: 88%;
   padding: 10px 14px;
   border-radius: 10px;
   line-height: 1.6;
@@ -340,6 +414,8 @@ onUnmounted(() => {
   background: #fff;
   color: #303133;
   border: 1px solid #e4e7ed;
+  font-size: 14px;
+  line-height: 1.7;
 }
 
 .info-bar {
@@ -351,20 +427,55 @@ onUnmounted(() => {
 .text {
   white-space: pre-wrap;
   word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .confirm-card {
   margin-top: 8px;
-  padding: 10px;
+  padding: 12px;
   border: 1px dashed #e6a23c;
   border-radius: 8px;
   background: #fdf6ec;
 }
 
-.confirm-msg {
+.confirm-title {
   font-size: 14px;
+  font-weight: 600;
+  color: #1f2d4d;
+  margin-bottom: 6px;
+}
+
+.confirm-msg {
+  font-size: 13px;
+  color: #606266;
+  line-height: 1.6;
+  margin-bottom: 10px;
+}
+
+.confirm-fields {
+  border-top: 1px solid #f0e2c8;
+  border-bottom: 1px solid #f0e2c8;
+  padding: 8px 0;
+  margin-bottom: 10px;
+}
+
+.confirm-field {
+  display: flex;
+  gap: 10px;
+  padding: 3px 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.field-label {
+  flex: 0 0 72px;
+  color: #909399;
+}
+
+.field-value {
+  flex: 1;
   color: #303133;
-  margin-bottom: 8px;
+  overflow-wrap: anywhere;
 }
 
 .confirm-actions {

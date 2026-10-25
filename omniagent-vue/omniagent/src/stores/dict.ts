@@ -85,11 +85,14 @@ export const useDictStore = defineStore('dict', () => {
   const getStatusTagStyle = (
     statusId: number | null,
   ): { color: string; backgroundColor: string; borderColor: string } => {
-    const map: Record<
-      number,
-      { color: string; backgroundColor: string; borderColor: string }
-    > = {
-      1: { color: '#909399', backgroundColor: '#f4f4f5', borderColor: '#d3d4d6' }, // DRAFT 草稿：灰（未提交）
+    type TagStyle = { color: string; backgroundColor: string; borderColor: string }
+    const DRAFT_STYLE: TagStyle = {
+      color: '#909399',
+      backgroundColor: '#f4f4f5',
+      borderColor: '#d3d4d6',
+    }
+    const map: Record<number, TagStyle> = {
+      1: DRAFT_STYLE, // DRAFT 草稿：灰（未提交）
       2: { color: '#409eff', backgroundColor: '#ecf5ff', borderColor: '#b3d8ff' }, // PENDING 待处理：蓝（已派单等待处理）
       3: { color: '#722ed1', backgroundColor: '#f4efff', borderColor: '#d3c0f5' }, // PROCESSING 处理中：紫（进行中）
       4: { color: '#67c23a', backgroundColor: '#f0f9eb', borderColor: '#c2e7b0' }, // RESOLVED 已解决：绿（已给出方案）
@@ -97,8 +100,8 @@ export const useDictStore = defineStore('dict', () => {
       6: { color: '#f56c6c', backgroundColor: '#fef0f0', borderColor: '#fbc4c4' }, // CANCELLED 已取消：红（作废）
       7: { color: '#e6a23c', backgroundColor: '#fdf6ec', borderColor: '#f5dab1' }, // TO_ASSIGN 待派单：橙（待主管派单）
     }
-    if (statusId == null) return map[1]
-    return map[statusId] || map[1]
+    if (statusId == null) return DRAFT_STYLE
+    return map[statusId] ?? DRAFT_STYLE
   }
 
   return {
