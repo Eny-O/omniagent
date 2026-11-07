@@ -92,9 +92,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, Users> implements U
         LambdaQueryWrapper<Users> wrapper = new LambdaQueryWrapper<>();
 
         if (StringUtils.hasText(query.getKeyword())) {
-            wrapper.like(Users::getUsername, query.getKeyword())
+            String keyword = query.getKeyword();
+            wrapper.and(w -> w.like(Users::getUsername, keyword)
                     .or()
-                    .like(Users::getRealName, query.getKeyword());
+                    .like(Users::getRealName, keyword));
         }
         if (query.getDeptId() != null) {
             wrapper.eq(Users::getDeptId, query.getDeptId());

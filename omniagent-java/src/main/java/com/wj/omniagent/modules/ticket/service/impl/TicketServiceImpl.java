@@ -225,9 +225,10 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
         LambdaQueryWrapper<Tickets> wrapper = new LambdaQueryWrapper<>();
 
         if (StringUtils.hasText(query.getKeyword())) {
-            wrapper.like(Tickets::getTitle, query.getKeyword())
+            String keyword = query.getKeyword();
+            wrapper.and(w -> w.like(Tickets::getTitle, keyword)
                     .or()
-                    .like(Tickets::getTicketNo, query.getKeyword());
+                    .like(Tickets::getTicketNo, keyword));
         }
         if (query.getStatusId() != null) {
             wrapper.eq(Tickets::getStatusId, query.getStatusId());
@@ -745,20 +746,23 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Tickets> implem
         Long uid = SecurityUtils.getCurrentUserId();
         switch (scope) {
             case SELF -> {
-                if (uid != null) {
-                    wrapper.eq(Tickets::getCreatorId, uid);
+                if (uid == null) {
+                    throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "当前用户身份未解析，拒绝访问");
                 }
+                wrapper.eq(Tickets::getCreatorId, uid);
             }
             case ASSIGNED -> {
-                if (uid != null) {
-                    wrapper.and(w -> w.eq(Tickets::getCreatorId, uid).or().eq(Tickets::getCurrentAssigneeId, uid));
+                if (uid == null) {
+                    throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "当前用户身份未解析，拒绝访问");
                 }
+                wrapper.and(w -> w.eq(Tickets::getCreatorId, uid).or().eq(Tickets::getCurrentAssigneeId, uid));
             }
             case DEPARTMENT -> {
                 Long deptId = resolveCurrentDeptId();
-                if (deptId != null) {
-                    wrapper.eq(Tickets::getDeptId, deptId);
+                if (deptId == null) {
+                    throw new BusinessException(ErrorCodeEnum.TICKET_NO_PERMISSION, "当前用户部门未解析，拒绝访问");
                 }
+                wrapper.eq(Tickets::getDeptId, deptId);
             }
             case ALL -> { /* 不过滤 */ }
         }

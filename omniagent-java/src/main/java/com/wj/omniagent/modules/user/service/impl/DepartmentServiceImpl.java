@@ -101,9 +101,10 @@ public class DepartmentServiceImpl extends ServiceImpl<DepartmentMapper, Departm
         LambdaQueryWrapper<Departments> wrapper = new LambdaQueryWrapper<>();
 
         if (StringUtils.hasText(query.getKeyword())) {
-            wrapper.like(Departments::getDeptCode, query.getKeyword())
+            String keyword = query.getKeyword();
+            wrapper.and(w -> w.like(Departments::getDeptCode, keyword)
                     .or()
-                    .like(Departments::getDeptName, query.getKeyword());
+                    .like(Departments::getDeptName, keyword));
         }
         if (query.getParentId() != null) {
             wrapper.eq(Departments::getParentId, query.getParentId());
