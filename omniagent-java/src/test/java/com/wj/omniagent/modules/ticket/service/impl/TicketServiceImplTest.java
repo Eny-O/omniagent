@@ -1,8 +1,19 @@
 package com.wj.omniagent.modules.ticket.service.impl;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.wj.omniagent.common.enums.ErrorCodeEnum;
 import com.wj.omniagent.common.pojo.result.PageResult;
+import com.wj.omniagent.exception.BusinessException;
+import com.wj.omniagent.modules.ticket.mapper.TicketAssignmentsMapper;
+import com.wj.omniagent.modules.ticket.mapper.TicketCategoryMapper;
+import com.wj.omniagent.modules.ticket.mapper.TicketCommentsMapper;
+import com.wj.omniagent.modules.ticket.mapper.TicketHistoryMapper;
 import com.wj.omniagent.modules.ticket.mapper.TicketMapper;
+import com.wj.omniagent.modules.ticket.mapper.TicketPriorityMapper;
+import com.wj.omniagent.modules.ticket.mapper.TicketSourceMapper;
+import com.wj.omniagent.modules.user.mapper.UserMapper;
+import com.wj.omniagent.modules.user.service.DepartmentService;
+import com.wj.omniagent.modules.user.service.security.LoginUserPrincipal;
 import com.wj.omniagent.modules.ticket.pojo.dos.Tickets;
 import com.wj.omniagent.modules.ticket.pojo.dto.TicketCreateDTO;
 import com.wj.omniagent.modules.ticket.util.TicketNoGenerator;
@@ -12,6 +23,7 @@ import com.wj.omniagent.modules.ticket.pojo.dto.TicketUpdateStatusDTO;
 import com.wj.omniagent.modules.ticket.pojo.enums.TicketStatusEnum;
 import com.wj.omniagent.modules.ticket.pojo.vo.TicketPageVO;
 import com.wj.omniagent.modules.ticket.pojo.vo.TicketVO;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -21,6 +33,9 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.Mockito;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -42,6 +57,30 @@ class TicketServiceImplTest {
     @Mock
     private TicketNoGenerator ticketNoGenerator;
 
+    @Mock
+    private TicketCategoryMapper ticketCategoryMapper;
+
+    @Mock
+    private TicketPriorityMapper ticketPriorityMapper;
+
+    @Mock
+    private TicketSourceMapper ticketSourceMapper;
+
+    @Mock
+    private UserMapper userMapper;
+
+    @Mock
+    private TicketAssignmentsMapper ticketAssignmentMapper;
+
+    @Mock
+    private TicketHistoryMapper ticketHistoryMapper;
+
+    @Mock
+    private TicketCommentsMapper ticketCommentMapper;
+
+    @Mock
+    private DepartmentService departmentService;
+
     @InjectMocks
     private TicketServiceImpl ticketService;
 
@@ -51,6 +90,15 @@ class TicketServiceImplTest {
 
     @BeforeEach
     void setUp() {
+        LoginUserPrincipal principal = new LoginUserPrincipal(
+                1L, "admin", null, 1, "ADMIN", 1L, Collections.<GrantedAuthority>emptyList(), true);
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities()));
+
+        Mockito.lenient().when(ticketCategoryMapper.selectCount(any())).thenReturn(1L);
+        Mockito.lenient().when(ticketPriorityMapper.selectCount(any())).thenReturn(1L);
+        Mockito.lenient().when(ticketSourceMapper.selectCount(any())).thenReturn(1L);
+
         ticketNoSequence = 0;
         Mockito.lenient().when(ticketNoGenerator.generate()).thenAnswer(invocation -> {
             ticketNoSequence++;
@@ -62,8 +110,12 @@ class TicketServiceImplTest {
         createDTO.setDescription("开机后蓝屏，错误代码0x00001");
         createDTO.setCategoryId(1);
         createDTO.setPriorityId(1);
-        createDTO.setCurrentAssigneeId(2L);
         createDTO.setSource("WEB");
+    }
+
+    @AfterEach
+    void tearDown() {
+        SecurityContextHolder.clearContext();
     }
 
     // ==================== 创建工单 ====================
@@ -108,39 +160,37 @@ class TicketServiceImplTest {
     }
 
     @Test
-    @DisplayName("创建工单-工单号重复时重试成功")
-    void createTicket_DuplicateTicketNo_RetrySuccess() {
+    @DisplayName("创建工单-工单号冲突时快速失败，不重试")
+    void createTicket_DuplicateTicketNo_FailFast() {
         // given
         when(ticketMapper.insert(any(Tickets.class)))
-                .thenThrow(DuplicateKeyException.class)
-                .thenAnswer(invocation -> {
-                    Tickets ticket = invocation.getArgument(0);
-                    ticket.setId(1L);
-                    return 1;
-                });
+                .thenThrow(new DuplicateKeyException("duplicate ticket_no"));
 
-        // when
-        TicketVO result = ticketService.createTicket(createDTO, 1L);
-
-        // then
-        assertNotNull(result);
-        assertEquals(1L, result.getId());
-        verify(ticketMapper, times(2)).insert(any(Tickets.class));
+        // when & then
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> ticketService.createTicket(createDTO, 1L)
+        );
+        assertEquals(ErrorCodeEnum.TICKET_INSERT_CONFLICT.getCode(), exception.getErrorCode());
+        assertTrue(exception.getMessage().contains("工单号生成冲突"));
+        verify(ticketNoGenerator, times(1)).generate();
+        verify(ticketMapper, times(1)).insert(any(Tickets.class));
     }
 
     @Test
-    @DisplayName("创建工单-工单号重试3次后仍失败则抛出异常")
-    void createTicket_DuplicateTicketNo_ExhaustRetry_ThrowsException() {
+    @DisplayName("创建工单-非唯一键异常原样抛出")
+    void createTicket_InsertOtherException_NotWrapped() {
         // given
-        when(ticketMapper.insert(any(Tickets.class))).thenThrow(DuplicateKeyException.class);
+        when(ticketMapper.insert(any(Tickets.class)))
+                .thenThrow(new IllegalStateException("db unavailable"));
 
         // when & then
-        RuntimeException exception = assertThrows(
-                RuntimeException.class,
+        IllegalStateException exception = assertThrows(
+                IllegalStateException.class,
                 () -> ticketService.createTicket(createDTO, 1L)
         );
-        assertEquals("工单号生成失败，请重试", exception.getMessage());
-        verify(ticketMapper, times(3)).insert(any(Tickets.class));
+        assertEquals("db unavailable", exception.getMessage());
+        verify(ticketMapper, times(1)).insert(any(Tickets.class));
     }
 
     // ==================== 查询工单 ====================
@@ -230,22 +280,58 @@ class TicketServiceImplTest {
     // ==================== 更新状态 ====================
 
     @Test
-    @DisplayName("更新工单状态成功")
-    void updateTicketStatus_Success() {
+    @DisplayName("草稿由创建者提交后进入待派单")
+    void submitTicket_Success() {
         // given
         Tickets ticket = buildTicket(1L, "TKT-20261015-001", TicketStatusEnum.DRAFT);
         when(ticketMapper.selectById(1L)).thenReturn(ticket);
         when(ticketMapper.updateById(any(Tickets.class))).thenReturn(1);
 
+        // when
+        TicketVO result = ticketService.submitTicket(1L, 1L);
+
+        // then
+        assertEquals(TicketStatusEnum.TO_ASSIGN.getDbId(), result.getStatusId());
+        verify(ticketMapper, times(1)).updateById(ticket);
+    }
+
+    @Test
+    @DisplayName("更新工单状态成功")
+    void updateTicketStatus_Success() {
+        // given
+        Tickets ticket = buildTicket(1L, "TKT-20261015-001", TicketStatusEnum.TO_ASSIGN);
+        when(ticketMapper.selectById(1L)).thenReturn(ticket);
+        when(ticketMapper.updateById(any(Tickets.class))).thenReturn(1);
+
         TicketUpdateStatusDTO dto = new TicketUpdateStatusDTO();
-        dto.setTargetStatusCode("PENDING");
+        dto.setTargetStatusCode("PROCESSING");
 
         // when
         ticketService.updateTicketStatus(1L, dto, 1L);
 
         // then
-        assertEquals(TicketStatusEnum.PENDING.getDbId(), ticket.getStatusId());
+        assertEquals(TicketStatusEnum.PROCESSING.getDbId(), ticket.getStatusId());
         verify(ticketMapper, times(1)).updateById(ticket);
+    }
+
+    @Test
+    @DisplayName("草稿禁止通过状态接口直接推进")
+    void updateTicketStatus_DraftToPending_ThrowsException() {
+        // given
+        Tickets ticket = buildTicket(1L, "TKT-20261015-001", TicketStatusEnum.DRAFT);
+        when(ticketMapper.selectById(1L)).thenReturn(ticket);
+
+        TicketUpdateStatusDTO dto = new TicketUpdateStatusDTO();
+        dto.setTargetStatusCode("PENDING");
+
+        // when & then
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> ticketService.updateTicketStatus(1L, dto, 1L)
+        );
+        assertEquals(ErrorCodeEnum.TICKET_NO_PERMISSION.getCode(), exception.getErrorCode());
+        assertTrue(exception.getMessage().contains("草稿工单需由创建者提交"));
+        verify(ticketMapper, never()).updateById(any(Tickets.class));
     }
 
     @Test
@@ -333,7 +419,6 @@ class TicketServiceImplTest {
         dto.setTitle("电脑黑屏无法启动");
         dto.setDescription("开机后黑屏，无错误代码");
         dto.setPriorityId(2);
-        dto.setCurrentAssigneeId(3L);
         dto.setContactPhone("13900000002");
         dto.setContactEmail("new@example.com");
         dto.setLocation("B栋2楼202");
@@ -346,7 +431,7 @@ class TicketServiceImplTest {
         assertEquals("电脑黑屏无法启动", result.getTitle());
         assertEquals("开机后黑屏，无错误代码", result.getDescription());
         assertEquals(2, result.getPriorityId());
-        assertEquals(3L, result.getCurrentAssigneeId());
+        assertNull(result.getCurrentAssigneeId());
         assertEquals("13900000002", result.getContactPhone());
         assertEquals("new@example.com", result.getContactEmail());
         assertEquals("B栋2楼202", result.getLocation());
