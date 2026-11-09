@@ -1,13 +1,14 @@
 # OmniAgent 数据库初始化
 
-用于从零拉起项目的 SQL 脚本。**只含表结构与最小种子数据**，不含演示工单、会话状态与知识库语料。
+用于从零拉起项目的 SQL 脚本。**含表结构、最小种子数据与示范知识库向量**，不含演示工单与会话状态。
 
 | 文件 | 内容 |
 | --- | --- |
 | `01_schema.sql` | 13 张业务表、索引、`ticket_no_seq` 序列、pgvector 扩展 |
 | `02_init_data.sql` | 7 状态 / 3 优先级 / 10 分类 / 5 来源 / 6 部门 / 5 个登录账号 |
+| `03_demo_kb.sql` | 20 篇示范知识库文档与 240 个 `vector(1024)` 向量 |
 
-两个脚本都**可重复执行**（`IF NOT EXISTS` / `ON CONFLICT DO NOTHING`）。
+三个脚本都**可重复执行**（`IF NOT EXISTS` / `ON CONFLICT DO NOTHING`）。
 
 ## 环境要求
 
@@ -26,7 +27,7 @@ compose 只有一份文件，靠命令指定服务范围区分两种模式（完
 
 在**仓库根目录**执行。postgres 服务使用 `pgvector/pgvector:pg17`，默认库 `omniagent` / 用户 `postgres` / 密码 `postgres` / 宿主端口 `5432`，与 Java `spring.datasource` 的默认值一致。
 
-脚本会把 `sql/` 挂到 `/docker-entrypoint-initdb.d/`，**数据卷为空的首次启动**按文件名顺序自动执行 `01_schema.sql`、`02_init_data.sql`，下面的手动步骤可以跳过。全量编排时 Java 与 Agent 的数据源由 compose 依据 `POSTGRES_*` 自动注入（容器内用服务名 `postgres`），无需手填。
+脚本会把 `sql/` 挂到 `/docker-entrypoint-initdb.d/`，**数据卷为空的首次启动**按文件名顺序自动执行 `01_schema.sql`、`02_init_data.sql`、`03_demo_kb.sql`，下面的手动步骤可以跳过。全量编排时 Java 与 Agent 的数据源由 compose 依据 `POSTGRES_*` 自动注入（容器内用服务名 `postgres`），无需手填。
 
 覆盖默认参数（写进根目录 `.env`，或直接前置到命令前）：
 
@@ -45,9 +46,10 @@ POSTGRES_PASSWORD=<自定义密码> POSTGRES_PORT=5433 docker compose up -d post
 ```bash
 psql -U postgres -d omniagent -f sql/01_schema.sql
 psql -U postgres -d omniagent -f sql/02_init_data.sql
+psql -U postgres -d omniagent -f sql/03_demo_kb.sql
 ```
 
-DataGrip：打开 `01_schema.sql`、选择目标数据源后全选执行，再对 `02_init_data.sql` 重复一次。**必须先跑结构，再跑种子**。
+DataGrip：依次打开 `01_schema.sql`、`02_init_data.sql`、`03_demo_kb.sql`，选择目标数据源后全选执行。**必须先跑结构，再跑种子与示范语料**。
 
 ## 默认账号
 
@@ -70,14 +72,13 @@ DataGrip：打开 `01_schema.sql`、选择目标数据源后全选执行，再�
 - **`ticket_no_seq` 必须存在**。工单号由 PostgreSQL 序列 `nextval` 原子取号（格式 `TKT-yyyyMMdd-NNN`），Java 端 `TicketNoGenerator` 直接依赖它，缺序列会导致建单失败。
 - **LangGraph 的 `checkpoint*` 4 张表不用建**。Agent 启动时 `AsyncPostgresSaver.setup()` 会自动创建并维护，属于运行时状态，不放进初始化脚本。
 
-## 知识库语料（需自行灌入）
+## 知识库示范语料
 
-`01_schema.sql` 只建 `kb_docs` / `kb_chunks` 两张空表，**不包含任何语料与向量**。
+`03_demo_kb.sql` 写入 20 篇示范文档与 240 个 `vector(1024)` 向量，随空卷首次启动自动执行。知识库问答另需在 `.env` 配置 `DASHSCOPE_API_KEY`，用于把提问转成向量。
 
-- 入库入口在 Agent 端 `omniagent-agent/OmniAgent/app/kb/ingestion.py`：文档切分 → 生成 embedding → 幂等写入两层表（`content_hash` 未变化则跳过）。语料文件需自行准备。
+- 自定义语料的入库入口在 Agent 端 `omniagent-agent/OmniAgent/app/kb/ingestion.py`：文档切分 → 生成 embedding → 幂等写入两层表（`content_hash` 未变化则跳过）。
 - `kb_chunks.embedding` 固定为 `vector(1024)`，须与 `app/core/config.py` 的 `embedding_dim` 及所用 embedding 模型一致；改维度要同步改列定义并重跑入库。
 - 当前**不建** ANN 向量索引（ivfflat / HNSW），小数据量下走精确扫描；数据量上来后可自行补 HNSW 索引。
-- 未灌入语料时，知识库问答检索不到有效片段，会返回低分偏转结论而不是硬答；这是预期行为，不是故障。工单类操作（查单、建单、派单等）不依赖 KB，可正常使用。
 
 ## 应用侧配置
 

@@ -1,6 +1,6 @@
 # OmniAgent 智能工单助手
 
-> 基于 **Spring Boot 3 + Vue 3 + FastAPI / LangGraph** 的企业工单系统，覆盖「报障 → 派单 → 处理 → 解决 → 关闭」闭环；核心是贯穿四种业务角色的 **AI 辅助层**：LLM 意图识别 → ReAct 工具循环（18 个工具）→ 高风险写操作人工确认（HITL）→ SSE 流式输出，业务数据一律经 Java REST 读写。
+> 基于 **Spring Boot 3 + Vue 3 + FastAPI / LangGraph** 的工单系统，覆盖「报障 → 派单 → 处理 → 解决 → 关闭」闭环；核心是贯穿四种业务角色的 **AI 辅助层**：LLM 意图识别 → ReAct 工具循环（18 个工具）→ 高风险写操作人工确认（HITL）→ SSE 流式输出，业务数据一律经 Java REST 读写。
 
 [![Java](https://img.shields.io/badge/Java-17-orange)](https://openjdk.org/)
 [![SpringBoot](https://img.shields.io/badge/Spring%20Boot-3.2.5-brightgreen)](https://spring.io/projects/spring-boot)
@@ -66,7 +66,7 @@ docker compose down              # 停止（保留数据卷）
 
 ### 1.3 数据库初始化
 
-数据卷为空的**首次启动**自动按文件名顺序执行 `sql/01_schema.sql` → `sql/02_init_data.sql`：建 13 张表、索引、`ticket_no_seq` 序列，写入 7 状态 / 3 优先级 / 10 分类 / 5 来源 / 6 部门 / 5 个登录账号。两个脚本都可重复执行（`IF NOT EXISTS` / `ON CONFLICT DO NOTHING`），**不含演示工单、语料与向量**。`checkpoint*` 四表由 Agent 启动时自建。详见 [`sql/README.md`](sql/README.md)。
+数据卷为空的**首次启动**自动按文件名顺序执行 `sql/01_schema.sql` → `sql/02_init_data.sql` → `sql/03_demo_kb.sql`：建 13 张表、索引、`ticket_no_seq` 序列，写入 7 状态 / 3 优先级 / 10 分类 / 5 来源 / 6 部门 / 5 个登录账号，导入 20 篇示范知识库文档与 240 个向量。三个脚本都可重复执行（`IF NOT EXISTS` / `ON CONFLICT DO NOTHING`），**不含演示工单与会话状态**。`checkpoint*` 四表由 Agent 启动时自建。详见 [`sql/README.md`](sql/README.md)。
 
 ### 1.4 默认账号
 
@@ -247,7 +247,7 @@ omniagent-java/                          # 仓库根
 
 - **必填密钥**：在 `.env` 填 `DEEPSEEK_API_KEY`、`DASHSCOPE_API_KEY`；`JWT_SECRET` 用 `openssl rand -hex 32` 生成（≥ 32 字节），对外部署时更换示例值。修改 `.env` 后执行 `docker compose up -d --force-recreate java agent`。
 - **端口**：默认 Web `8081`、PostgreSQL `5432`；被占用时改 `.env` 的 `WEB_PORT` / `POSTGRES_PORT` 后重新启动，浏览器访问 `http://localhost:<WEB_PORT>`。
-- **数据**：停止服务用 `docker compose down`；不要用 `docker compose down -v`（会清空数据库与自行灌入的语料）。
+- **数据**：停止服务用 `docker compose down`；不要用 `docker compose down -v`（会清空数据库）。
 - **演示账号**：5 个账号共用口令 `123456`，数据库 `postgres/postgres`；对外部署前改密并更换 JWT 密钥，不要提交含密钥的 `.env`。
 
 ## 七、说明
