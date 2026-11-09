@@ -49,8 +49,8 @@
 ### 1.2 拉取预构建镜像，一键启动
 
 ```bash
-git clone https://github.com/Eny-O/omniagent-java.git
-cd omniagent-java
+git clone https://github.com/Eny-O/omniagent.git
+cd omniagent
 cp .env.example .env
 # 编辑 .env：填 DEEPSEEK_API_KEY、DASHSCOPE_API_KEY；JWT_SECRET 必须 ≥ 32 字节（openssl rand -hex 32）
 docker compose up -d
@@ -108,8 +108,8 @@ curl -fsSL https://get.docker.com | sudo sh      # 安装 Docker Engine 与 Comp
 sudo usermod -aG docker $USER && newgrp docker   # 当前用户加入 docker 组
 docker compose version                           # 确认 Compose v2
 
-git clone https://github.com/Eny-O/omniagent-java.git
-cd omniagent-java && cp .env.example .env
+git clone https://github.com/Eny-O/omniagent.git
+cd omniagent && cp .env.example .env
 # 填 DEEPSEEK_API_KEY / DASHSCOPE_API_KEY；JWT_SECRET 用 openssl rand -hex 32 生成
 docker compose up -d
 ```
@@ -204,7 +204,7 @@ flowchart LR
 三端共存于同一仓库，各自独立构建、独立镜像、独立部署。
 
 ```
-omniagent-java/                          # 仓库根
+omniagent/                               # 仓库根
 ├── README.md
 ├── LICENSE
 ├── docker-compose.yml                   # postgres + java + agent + vue

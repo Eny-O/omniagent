@@ -1,5 +1,5 @@
 FROM python:3.12-slim
-LABEL org.opencontainers.image.source=https://github.com/Eny-O/omniagent-java
+LABEL org.opencontainers.image.source=https://github.com/Eny-O/omniagent
 LABEL org.opencontainers.image.description="OmniAgent FastAPI / LangGraph agent"
 WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1

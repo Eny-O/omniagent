@@ -5,7 +5,7 @@ COPY src ./src
 RUN mvn -B -q clean package -DskipTests
 
 FROM eclipse-temurin:17-jre
-LABEL org.opencontainers.image.source=https://github.com/Eny-O/omniagent-java
+LABEL org.opencontainers.image.source=https://github.com/Eny-O/omniagent
 LABEL org.opencontainers.image.description="OmniAgent Spring Boot backend"
 WORKDIR /app
 COPY --from=build /build/target/omniagent-java-0.0.1-SNAPSHOT.jar app.jar
