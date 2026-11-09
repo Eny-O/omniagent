@@ -53,6 +53,7 @@ git clone https://github.com/Eny-O/omniagent.git
 cd omniagent
 cp .env.example .env
 # 编辑 .env：填 DEEPSEEK_API_KEY、DASHSCOPE_API_KEY；JWT_SECRET 必须 ≥ 32 字节（openssl rand -hex 32）
+docker compose pull java agent vue
 docker compose up -d
 ```
 
@@ -111,6 +112,7 @@ docker compose version                           # 确认 Compose v2
 git clone https://github.com/Eny-O/omniagent.git
 cd omniagent && cp .env.example .env
 # 填 DEEPSEEK_API_KEY / DASHSCOPE_API_KEY；JWT_SECRET 用 openssl rand -hex 32 生成
+docker compose pull java agent vue
 docker compose up -d
 ```
 
@@ -213,6 +215,7 @@ omniagent/                               # 仓库根
 ├── sql/
 │   ├── 01_schema.sql                    # 13 张表 + 索引 + ticket_no_seq
 │   ├── 02_init_data.sql                 # 字典 / 部门 / 5 个默认账号
+│   ├── 03_demo_kb.sql                   # 20 篇示范文档 + 240 个向量
 │   └── README.md
 ├── omniagent-java/                      # Spring Boot 后端  :8080
 │   ├── Dockerfile                       # maven:3.9-temurin-17 多阶段构建
