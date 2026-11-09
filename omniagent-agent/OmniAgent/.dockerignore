@@ -1,0 +1,9 @@
+.env
+.env.*
+__pycache__/
+*.py[cod]
+*.ipynb
+.ipynb_checkpoints/
+.langgraph_api/
+.idea/
+.git/

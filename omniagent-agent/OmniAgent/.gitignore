@@ -46,4 +46,4 @@ ENV/
 *.tmp
 .DS_Store
 Thumbs.db
-.ipynb
+*.ipynb

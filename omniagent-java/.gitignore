@@ -19,7 +19,8 @@ out/
 .settings/
 
 # ================== 配置文件（含敏感信息） ==================
-src/main/resources/application.yml
+# application.yml 与 application.yml.example 为脱敏样例，随仓库分发；
+# 本机真实口令放 application-local.yml（不入库），以 SPRING_PROFILES_ACTIVE=local 加载
 src/main/resources/application-*.yml
 
 # ================== 日志 ==================

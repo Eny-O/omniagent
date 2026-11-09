@@ -1,0 +1,20 @@
+# 本机开发配置样例（本文件不会被 Spring Boot 加载，仅作模板）
+#
+# 一、Docker Compose 全量编排（clone 后的默认路径）
+#    无需本文件：compose 会把 SPRING_DATASOURCE_URL / USERNAME / PASSWORD
+#    与 JWT_SECRET 注入 java 容器，优先级高于 application.yml。
+#
+# 二、本机开发（只起 postgres，三端在本机跑）
+#    方式 A：启动前设置环境变量
+#      SPRING_DATASOURCE_PASSWORD=<你的本机数据库口令> mvn spring-boot:run
+#    方式 B：把本文件复制为同目录 application-local.yml（已被 .gitignore 排除），
+#           填好下面的值，再以 SPRING_PROFILES_ACTIVE=local 启动。
+#
+# 仓库内的 application.yml 只保留占位，不含任何明文口令；
+# 请勿把含真实口令的文件提交进版本库。
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/omniagent
+    username: <你的本机数据库用户名>
+    password: <你的本机数据库口令>

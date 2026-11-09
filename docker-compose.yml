@@ -1,0 +1,91 @@
+name: omniagent
+
+# 一份 compose，两种命令：
+#   docker compose up -d postgres   -> 只起数据库，三端本机跑（保留热更新 / devtools）
+#   docker compose up -d            -> 默认拉取 GHCR 上的预构建镜像，起全套
+#
+# java / agent / vue 同时声明 image 与 build：按 Compose Build Specification，
+# up 会先尝试拉取镜像，拉不到才回退到源码构建（此时才需要 Maven / npm / pip）。
+# 想强制从源码构建：docker compose up -d --build
+# 镜像由 .github/workflows/images.yml 在 push 到 main 时自动构建推送，也可手动 docker push。
+#
+# 容器间用服务名互访（postgres / java / agent）；本机跑三端时各读自己配置文件里的
+# localhost，compose 注入的环境变量只作用于容器内，两种模式互不干扰。
+# sql/ 下的 .sql 在数据卷为空时按文件名顺序自动执行（01_schema -> 02_init_data）。
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: omniagent-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-omniagent}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-omniagent}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  java:
+    image: ${IMAGE_REGISTRY:-ghcr.io/eny-o}/omniagent-java:${IMAGE_TAG:-latest}
+    build:
+      context: ./omniagent-java
+    container_name: omniagent-java
+    restart: unless-stopped
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-omniagent}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-postgres}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      JWT_SECRET: ${JWT_SECRET:-omniagent-dev-secret-please-change-in-prod-1234567890}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # 不映射宿主端口：容器内由 vue 的 Nginx 反代 /api/ 访问
+
+  agent:
+    image: ${IMAGE_REGISTRY:-ghcr.io/eny-o}/omniagent-agent:${IMAGE_TAG:-latest}
+    build:
+      context: ./omniagent-agent/OmniAgent
+    container_name: omniagent-agent
+    restart: unless-stopped
+    environment:
+      PG_DSN: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-omniagent}
+      OMNIAGENT_API_BASE_URL: http://java:8080
+      JWT_SECRET: ${JWT_SECRET:-omniagent-dev-secret-please-change-in-prod-1234567890}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
+      LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
+      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
+      LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-omniagent}
+      LANGSMITH_ENDPOINT: ${LANGSMITH_ENDPOINT:-https://api.smith.langchain.com}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      java:
+        condition: service_started
+    # 不映射宿主端口：容器内由 vue 的 Nginx 反代 /agent/ 访问（SSE 同源）
+
+  vue:
+    image: ${IMAGE_REGISTRY:-ghcr.io/eny-o}/omniagent-vue:${IMAGE_TAG:-latest}
+    build:
+      context: ./omniagent-vue/omniagent
+      args:
+        VITE_AGENT_BASE: /agent
+    container_name: omniagent-vue
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8081}:80"
+    depends_on:
+      - java
+      - agent
+
+volumes:
+  pgdata:
