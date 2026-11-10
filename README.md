@@ -1,6 +1,6 @@
-# OmniAgent 智能工单助手
+# OmniAgent 智能工单系统
 
-> 基于 **Spring Boot 3 + Vue 3 + FastAPI / LangGraph** 的工单系统，覆盖「报障 → 派单 → 处理 → 解决 → 关闭」闭环；核心是贯穿四种业务角色的 **AI 辅助层**：LLM 意图识别 → ReAct 工具循环（18 个工具）→ 高风险写操作人工确认（HITL）→ SSE 流式输出，业务数据一律经 Java REST 读写。
+> 基于Spring Boot3 + MyBatis-Plus + PostgreSQL + FastAPI + LangGraph + RAG + Vue3的智能工单系统。Java 后端与 Python AI 服务异构协同，Agent不直连数据库，工具调用统一经过Java接口并受权限与审计约束。智能体可自主完成建单、派单与查单，并结合知识库实现先查后建的意图偏转与多轮流式对话。
 
 [![Java](https://img.shields.io/badge/Java-17-orange)](https://openjdk.org/)
 [![SpringBoot](https://img.shields.io/badge/Spring%20Boot-3.2.5-brightgreen)](https://spring.io/projects/spring-boot)
